@@ -1,0 +1,117 @@
+{{!
+    @template gradereport_coifish/progress_view
+
+    Visual progress view with single-fill bars per category and course
+    total, with threshold markers on the course total bar.
+
+    Context variables required for this template:
+    * progressdata (object) - Progress bar data from report.
+    * progressdata.categorybars (array) - Per-category bar data.
+    * progressdata.coursetotalbar (object) - Course total bar data.
+    * progressdata.thresholds (array) - Threshold markers.
+    * progressjson (string) - JSON-encoded progress data for JS.
+    * widgetstop (bool) - Whether goals/widgets render above category bars.
+
+    Example context (json):
+    {
+        "progressdata": {
+            "categorybars": [],
+            "coursetotalbar": {
+                "name": "Course total",
+                "percentage": 65,
+                "bestpossible": 85
+            },
+            "thresholds": []
+        },
+        "progressjson": "{}",
+        "widgetstop": true
+    }
+}}
+<div id="gradetracker-progress-view" {{^defaultprogress}}class="d-none"{{/defaultprogress}}>
+    <div class="gradetracker-progress-container" data-progressdata="{{progressjson}}">
+
+        {{! Course total bar — always at the top }}
+        <div class="gradetracker-progress-bar-group gradetracker-course-total-bar mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h4 class="mb-0 gradetracker-progress-label">
+                    {{progressdata.coursetotalbar.name}}
+                </h4>
+                <div class="d-flex align-items-center gap-3">
+                    {{#runningtotal}}
+                        <span class="gradetracker-running-total-label small text-muted">
+                            <i class="fa fa-line-chart me-1" aria-hidden="true"></i>
+                            {{#str}}runningtotal, gradereport_coifish{{/str}}:
+                            <span class="gradetracker-bar-percentage fw-bold gradetracker-running-percentage"
+                                  data-target="{{progressdata.coursetotalbar.running_percentage}}">0%</span>
+                            <i class="icon fa fa-question-circle fa-fw"
+                               data-bs-toggle="tooltip"
+                               title="{{#str}}runningtotal_help, gradereport_coifish{{/str}}"></i>
+                        </span>
+                    {{/runningtotal}}
+                    <span class="gradetracker-bar-percentage fw-bold fs-5" data-target="{{progressdata.coursetotalbar.percentage}}">0%</span>
+                </div>
+            </div>
+            <div class="gradetracker-bar-wrapper">
+                <div class="gradetracker-stacked-bar gradetracker-stacked-bar-lg">
+                    <div class="gradetracker-bar-fill gradetracker-bar-fill-total"
+                         style="width: 0%"
+                         data-target-width="{{progressdata.coursetotalbar.percentage}}%">
+                    </div>
+                    {{#runningtotal}}
+                        <div class="gradetracker-running-total-marker"
+                             style="left: 0%"
+                             data-target-left="{{progressdata.coursetotalbar.running_percentage}}%"
+                             data-bs-toggle="tooltip"
+                             title="{{#str}}runningtotal, gradereport_coifish{{/str}}: {{progressdata.coursetotalbar.running_percentage}}%">
+                        </div>
+                    {{/runningtotal}}
+                    {{#progressdata.coursetotalbar.bestpossible}}
+                        <div class="gradetracker-best-possible"
+                             style="width: 0%"
+                             data-target-width="{{progressdata.coursetotalbar.bestpossible}}%"
+                             data-bs-toggle="tooltip"
+                             title="{{#str}}bestpossible, gradereport_coifish{{/str}}: {{progressdata.coursetotalbar.bestpossible}}%">
+                        </div>
+                    {{/progressdata.coursetotalbar.bestpossible}}
+                </div>
+                <div class="gradetracker-threshold-markers"></div>
+            </div>
+        </div>
+
+        {{! Threshold legend }}
+        <div class="gradetracker-threshold-legend d-flex flex-wrap gap-3 mt-2">
+            {{#progressdata.thresholds}}
+                <span class="gradetracker-legend-item">
+                    <span class="gradetracker-legend-line gradetracker-legend-line-{{key}}"></span>
+                    {{label}} ({{value}}%)
+                </span>
+            {{/progressdata.thresholds}}
+            <span class="gradetracker-legend-item">
+                <span class="gradetracker-legend-ghost"></span>
+                {{#str}}bestpossible, gradereport_coifish{{/str}}
+            </span>
+            {{#runningtotal}}
+                <span class="gradetracker-legend-item">
+                    <span class="gradetracker-legend-running"></span>
+                    {{#str}}runningtotal, gradereport_coifish{{/str}}
+                </span>
+            {{/runningtotal}}
+        </div>
+
+        {{! ===== WIDGETS ON TOP ===== }}
+        {{#widgetstop}}
+            {{> gradereport_coifish/progress_goals_widgets }}
+            <div class="mt-4 pt-3 border-top">
+                {{> gradereport_coifish/progress_category_bars }}
+            </div>
+        {{/widgetstop}}
+
+        {{! ===== WIDGETS ON BOTTOM ===== }}
+        {{^widgetstop}}
+            <div class="mt-4 pt-3 border-top">
+                {{> gradereport_coifish/progress_category_bars }}
+            </div>
+            {{> gradereport_coifish/progress_goals_widgets }}
+        {{/widgetstop}}
+    </div>
+</div>

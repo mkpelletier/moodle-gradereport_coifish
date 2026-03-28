@@ -1,0 +1,131 @@
+{{!
+    @template gradereport_coifish/summary_report
+
+    Template for the teacher summary view showing all students.
+
+    Context variables required for this template:
+    * hasusers (bool) - Whether there are enrolled users.
+    * users (array) - Array of user summary objects.
+    * usercount (int) - Total number of users.
+    * cohortinsights (object) - Cohort-level analytics data.
+
+    Each user object contains:
+    * userid (int) - The user's ID.
+    * fullname (string) - The user's full name.
+    * grade (string) - The user's course total grade.
+    * grademax (string) - The maximum course grade.
+    * percentage (string) - The user's percentage.
+    * viewurl (string) - URL to view this user's detailed report.
+
+    Example context (json):
+    {
+        "hasusers": true,
+        "usercount": 2,
+        "users": [
+            {
+                "userid": 5,
+                "fullname": "John Smith",
+                "grade": "75.00",
+                "grademax": "100.00",
+                "percentage": "75.0%",
+                "viewurl": "/grade/report/gradetracker/index.php?id=2&userid=5"
+            }
+        ],
+        "cohortinsights": {"hasdata": true}
+    }
+}}
+<div class="gradereport-coifish-summary">
+    {{^hasusers}}
+        <div class="alert alert-info mt-3">
+            {{#str}}nogrades, gradereport_coifish{{/str}}
+        </div>
+    {{/hasusers}}
+
+    {{#hasusers}}
+        <div class="d-flex justify-content-between align-items-center mb-3 mt-3">
+            <div></div>
+            <div class="btn-group btn-group-sm" role="group"
+                 aria-label="{{#str}}viewtoggle, gradereport_coifish{{/str}}">
+                <button type="button"
+                        class="btn btn-outline-primary {{^defaultinsights}}active{{/defaultinsights}}"
+                        id="gradetracker-summary-table-btn"
+                        aria-pressed="{{^defaultinsights}}true{{/defaultinsights}}{{#defaultinsights}}false{{/defaultinsights}}">
+                    <i class="fa fa-table" aria-hidden="true"></i>
+                    {{#str}}tableview, gradereport_coifish{{/str}}
+                </button>
+                <button type="button"
+                        class="btn btn-outline-primary {{#defaultinsights}}active{{/defaultinsights}}"
+                        id="gradetracker-summary-insights-btn"
+                        aria-pressed="{{#defaultinsights}}true{{/defaultinsights}}{{^defaultinsights}}false{{/defaultinsights}}">
+                    <i class="fa fa-stethoscope" aria-hidden="true"></i>
+                    {{#str}}insightsview, gradereport_coifish{{/str}}
+                </button>
+            </div>
+        </div>
+
+        {{#js}}
+            require(['gradereport_coifish/toggles'], function(mod) {
+                mod.initSummary();
+            });
+        {{/js}}
+
+        <div id="gradetracker-summary-table-view" {{#defaultinsights}}class="d-none"{{/defaultinsights}}>
+            <table class="table table-striped table-hover table-sm table-bordered">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">{{#str}}student, gradereport_coifish{{/str}}</th>
+                        <th scope="col">{{#str}}coursetotal, gradereport_coifish{{/str}}</th>
+                        <th scope="col">{{#str}}percentage, gradereport_coifish{{/str}}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#users}}
+                        <tr>
+                            <td>
+                                <a href="{{viewurl}}">{{fullname}}</a>
+                            </td>
+                            <td>{{grade}} / {{grademax}}</td>
+                            <td>{{percentage}}</td>
+                        </tr>
+                    {{/users}}
+                </tbody>
+            </table>
+            <p class="text-muted small">
+                {{usercount}} {{#str}}student, gradereport_coifish{{/str}}(s)
+            </p>
+        </div>
+
+        <div id="gradetracker-summary-insights-view" {{^defaultinsights}}class="d-none"{{/defaultinsights}}>
+            {{> gradereport_coifish/cohort_insights_view }}
+        </div>
+
+        {{#js}}
+            require(['gradereport_coifish/riskquadrant', 'gradereport_coifish/sociogram'],
+                function(riskquadrant, sociogram) {
+                    function initCharts() {
+                        if (document.getElementById('gradetracker-riskquadrant') &&
+                            !document.getElementById('gradetracker-riskquadrant').hasAttribute('data-initialized')) {
+                            riskquadrant.init('gradetracker-riskquadrant');
+                            document.getElementById('gradetracker-riskquadrant').setAttribute('data-initialized', '1');
+                        }
+                        if (document.getElementById('gradetracker-sociogram') &&
+                            !document.getElementById('gradetracker-sociogram').hasAttribute('data-initialized')) {
+                            sociogram.init('gradetracker-sociogram');
+                            document.getElementById('gradetracker-sociogram').setAttribute('data-initialized', '1');
+                        }
+                    }
+                    var insightsView = document.getElementById('gradetracker-summary-insights-view');
+                    if (insightsView && !insightsView.classList.contains('d-none')) {
+                        initCharts();
+                    }
+                    var insightsBtn = document.getElementById('gradetracker-summary-insights-btn');
+                    if (insightsBtn) {
+                        insightsBtn.addEventListener('click', function() {
+                            setTimeout(initCharts, 50);
+                        });
+                    }
+                }
+            );
+        {{/js}}
+    {{/hasusers}}
+</div>

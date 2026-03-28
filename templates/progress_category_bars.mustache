@@ -1,0 +1,83 @@
+{{!
+    @template gradereport_coifish/progress_category_bars
+
+    Per-category progress bars partial.
+
+    Context variables required for this template:
+    * progressdata.categorybars (array) - Array of category bar objects.
+      * name (string) - The category name.
+      * weight (string) - The category weight badge label (e.g. "40%").
+      * graded_count (int) - Number of graded items in the category.
+      * total_count (int) - Total number of items in the category.
+      * percentage (number) - Current grade percentage for the bar fill.
+      * running_percentage (number) - Running total percentage (only when runningtotal is true).
+      * runningtotal (bool) - Whether to show the running total marker.
+
+    Example context (json):
+    {
+        "progressdata": {
+            "categorybars": [
+                {
+                    "name": "Assignments",
+                    "weight": "40%",
+                    "graded_count": 3,
+                    "total_count": 5,
+                    "percentage": 72,
+                    "running_percentage": 68,
+                    "runningtotal": true
+                }
+            ]
+        }
+    }
+}}
+{{#progressdata.categorybars}}
+    <div class="gradetracker-progress-bar-group mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0 gradetracker-progress-label">{{name}}</h5>
+                {{#weight}}
+                    <span class="badge gradeoverview-weight-badge">{{weight}}</span>
+                {{/weight}}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="gradetracker-completion-ring"
+                      data-graded="{{graded_count}}"
+                      data-total="{{total_count}}"
+                      title="{{graded_count}} / {{total_count}} {{#str}}graded, gradereport_coifish{{/str}}">
+                    <svg viewBox="0 0 36 36" class="gradetracker-ring-svg">
+                        <path class="gradetracker-ring-bg"
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        <path class="gradetracker-ring-fill"
+                              stroke-dasharray="0, 100"
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        <text x="18" y="21" class="gradetracker-ring-text">{{graded_count}}/{{total_count}}</text>
+                    </svg>
+                </span>
+                {{#runningtotal}}
+                    <span class="gradetracker-running-total-label small text-muted"
+                          data-bs-toggle="tooltip"
+                          title="{{#str}}runningtotal_help, gradereport_coifish{{/str}}">
+                        <i class="fa fa-line-chart" aria-hidden="true"></i>
+                        <span class="gradetracker-bar-percentage gradetracker-running-percentage"
+                              data-target="{{running_percentage}}">0%</span>
+                    </span>
+                {{/runningtotal}}
+                <span class="gradetracker-bar-percentage fw-bold" data-target="{{percentage}}">0%</span>
+            </div>
+        </div>
+        <div class="gradetracker-bar-wrapper">
+            <div class="gradetracker-stacked-bar">
+                <div class="gradetracker-bar-fill" style="width: 0%"
+                     data-target-width="{{percentage}}%"></div>
+                {{#runningtotal}}
+                    <div class="gradetracker-running-total-marker"
+                         style="left: 0%"
+                         data-target-left="{{running_percentage}}%"
+                         data-bs-toggle="tooltip"
+                         title="{{#str}}runningtotal, gradereport_coifish{{/str}}: {{running_percentage}}%">
+                    </div>
+                {{/runningtotal}}
+            </div>
+        </div>
+    </div>
+{{/progressdata.categorybars}}

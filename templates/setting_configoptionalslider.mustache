@@ -1,0 +1,126 @@
+{{!
+    @template gradereport_coifish/setting_configoptionalslider
+
+    Optional range slider with enable/disable checkbox.
+
+    Context variables required:
+    * id (string) - Unique HTML element ID.
+    * name (string) - Form field name.
+    * value (int) - Current slider value.
+    * enabled (bool) - Whether the slider is currently active.
+    * min (int) - Minimum value.
+    * max (int) - Maximum value.
+    * step (int) - Step increment.
+    * unit (string) - Unit suffix (e.g. '%').
+    * readonly (bool) - Whether the setting is locked.
+
+    Example context (json):
+    {
+        "id": "id_s_gradereport_coifish_threshold_merit",
+        "name": "s_gradereport_coifish_threshold_merit",
+        "value": 65,
+        "enabled": false,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "unit": "%",
+        "readonly": false
+    }
+}}
+<div class="gradetracker-optslider-wrap" id="{{id}}_wrap">
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <input type="checkbox"
+               id="{{id}}_enabled"
+               class="form-check-input"
+               {{#enabled}}checked{{/enabled}}
+               {{#readonly}}disabled{{/readonly}}>
+        <label for="{{id}}_enabled" class="form-check-label small">
+            {{#str}}setting_enable_threshold, gradereport_coifish{{/str}}
+        </label>
+    </div>
+    <div class="d-flex align-items-center gap-3 gradetracker-optslider-slider {{^enabled}}gradetracker-optslider-disabled{{/enabled}}" id="{{id}}_sliderwrap">
+        <input type="range"
+               id="{{id}}"
+               value="{{value}}"
+               min="{{min}}"
+               max="{{max}}"
+               step="{{step}}"
+               class="gradetracker-slider-input"
+               {{^enabled}}disabled{{/enabled}}
+               {{#readonly}}disabled{{/readonly}}>
+        <span class="gradetracker-slider-value badge {{#enabled}}bg-primary{{/enabled}}{{^enabled}}bg-secondary{{/enabled}}" id="{{id}}_display">{{value}}{{unit}}</span>
+        <span class="text-muted small">{{min}}{{unit}} – {{max}}{{unit}}</span>
+    </div>
+    {{! Hidden inputs carry the actual form data }}
+    <input type="hidden" name="{{name}}[enabled]" value="{{#enabled}}1{{/enabled}}{{^enabled}}0{{/enabled}}" id="{{id}}_enabledval">
+    <input type="hidden" name="{{name}}[value]" value="{{value}}" id="{{id}}_val">
+</div>
+<style>
+    .gradetracker-optslider-disabled {
+        opacity: .4;
+        pointer-events: none;
+    }
+    .gradetracker-optslider-wrap .gradetracker-slider-input {
+        flex: 1;
+        min-width: 180px;
+        height: 6px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: #dee2e6;
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+    }
+    .gradetracker-optslider-wrap .gradetracker-slider-input::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #0d6efd;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .gradetracker-optslider-wrap .gradetracker-slider-input::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #0d6efd;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .gradetracker-optslider-wrap .gradetracker-slider-value {
+        min-width: 50px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+<script>
+    (function() {
+        var checkbox = document.getElementById('{{id}}_enabled');
+        var slider = document.getElementById('{{id}}');
+        var display = document.getElementById('{{id}}_display');
+        var wrap = document.getElementById('{{id}}_sliderwrap');
+        var enabledInput = document.getElementById('{{id}}_enabledval');
+        var valueInput = document.getElementById('{{id}}_val');
+        var unit = '{{unit}}';
+
+        if (!checkbox || !slider) return;
+
+        checkbox.addEventListener('change', function() {
+            var on = this.checked;
+            slider.disabled = !on;
+            enabledInput.value = on ? '1' : '0';
+            wrap.classList.toggle('gradetracker-optslider-disabled', !on);
+            display.classList.toggle('bg-primary', on);
+            display.classList.toggle('bg-secondary', !on);
+        });
+
+        slider.addEventListener('input', function() {
+            display.textContent = this.value + unit;
+            valueInput.value = this.value;
+        });
+    })();
+</script>

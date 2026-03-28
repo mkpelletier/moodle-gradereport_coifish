@@ -1,0 +1,1557 @@
+/* Grade Tracker report styles. */
+
+.gradereport-coifish .gradeoverview-category-header {
+    border-bottom: 2px solid #dee2e6;
+    padding-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.gradereport-coifish .gradeoverview-weight-badge {
+    background-color: #0d553f;
+    color: #fff;
+}
+
+.gradereport-coifish .gradeoverview-coursetotal {
+    font-size: 1.05em;
+}
+
+.gradereport-coifish .text-muted td,
+.gradereport-coifish tr.text-muted td {
+    color: #495057;
+    font-style: italic;
+}
+
+.gradereport-coifish .gradeoverview-category td a {
+    text-decoration: none;
+    color: #0d553f;
+    font-weight: 500;
+}
+
+.gradereport-coifish .gradeoverview-category td a:hover {
+    text-decoration: underline;
+}
+
+.gradereport-coifish-actionbar .form-select-sm {
+    min-width: 200px;
+}
+
+.gradereport-coifish-summary .table td a {
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.gradereport-coifish-summary .table td a:hover {
+    text-decoration: underline;
+}
+
+/* Late and extension badge styles. */
+.gradereport-coifish .gradeoverview-late-badge {
+    background-color: #dc3545;
+    color: #fff;
+    font-size: 0.75em;
+}
+
+.gradereport-coifish .gradeoverview-extension-badge {
+    background-color: #0dcaf0;
+    color: #000;
+    font-size: 0.75em;
+}
+
+#gradetracker-view-table-btn.active,
+#gradetracker-view-progress-btn.active,
+#gradetracker-view-insights-btn.active,
+#gradetracker-summary-table-btn.active,
+#gradetracker-summary-insights-btn.active {
+    font-weight: 600;
+}
+
+/* ── Progress view ── */
+
+/* Wrapper gives space above/below for threshold markers and labels. */
+.gradetracker-progress-bar-group {
+    padding-top: 22px;
+}
+
+.gradetracker-bar-wrapper {
+    position: relative;
+}
+
+.gradetracker-stacked-bar {
+    position: relative;
+    display: flex;
+    height: 28px;
+    background: #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.gradetracker-stacked-bar-lg {
+    height: 36px;
+    border-radius: 8px;
+}
+
+.gradetracker-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0;
+    border-radius: 6px 0 0 6px;
+    transition: width 800ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Best possible ghost outline — sits in the wrapper, overlays the bar. */
+.gradetracker-best-possible {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0;
+    border-right: 3px dashed rgba(25, 135, 84, 0.5);
+    background: rgba(25, 135, 84, 0.08);
+    border-radius: inherit;
+    transition: width 1000ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Running total marker — vertical line showing graded-only percentage. */
+.gradetracker-running-total-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    left: 0;
+    background: #0d6efd;
+    border-radius: 2px;
+    z-index: 3;
+    transition: left 800ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: help;
+    box-shadow: 0 0 4px rgba(13, 110, 253, 0.5);
+}
+
+.gradetracker-running-total-label {
+    white-space: nowrap;
+}
+
+.gradereport-coifish .gradetracker-running-percentage,
+.gradetracker-running-percentage.text-primary {
+    color: #0d6efd;
+}
+
+/* Threshold markers — positioned in the wrapper OUTSIDE the overflow:hidden bar. */
+.gradetracker-threshold-markers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.gradetracker-threshold-marker {
+    position: absolute;
+    top: -4px;
+    height: calc(100% + 8px);
+    width: 3px;
+    padding: 0 8px;
+    margin-left: -8px;
+    background-clip: content-box;
+    pointer-events: auto;
+    cursor: help;
+}
+
+/* Coloured threshold lines — pass (green), merit (blue), distinction (gold). */
+.gradetracker-threshold-pass {
+    background-color: #198754;
+    box-shadow: -1px 0 0 rgba(255, 255, 255, 0.7), 1px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+.gradetracker-threshold-merit {
+    background-color: #0d6efd;
+    box-shadow: -1px 0 0 rgba(255, 255, 255, 0.7), 1px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+.gradetracker-threshold-distinction {
+    background-color: #d4a017;
+    box-shadow: -1px 0 0 rgba(255, 255, 255, 0.7), 1px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Label above the marker. */
+.gradetracker-threshold-marker::before {
+    content: attr(data-label);
+    position: absolute;
+    bottom: calc(100% + 3px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7em;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    padding: 1px 4px;
+    border-radius: 3px;
+    line-height: 1.2;
+}
+
+.gradetracker-threshold-pass::before {
+    color: #198754;
+    background: rgba(25, 135, 84, 0.1);
+}
+
+.gradetracker-threshold-merit::before {
+    color: #0d6efd;
+    background: rgba(13, 110, 253, 0.1);
+}
+
+.gradetracker-threshold-distinction::before {
+    color: #d4a017;
+    background: rgba(212, 160, 23, 0.12);
+}
+
+/* Arrow pointing down into the bar. */
+.gradetracker-threshold-marker::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    transform: translateX(-50%);
+}
+
+.gradetracker-threshold-pass::after {
+    border-top: 5px solid #198754;
+}
+
+.gradetracker-threshold-merit::after {
+    border-top: 5px solid #0d6efd;
+}
+
+.gradetracker-threshold-distinction::after {
+    border-top: 5px solid #d4a017;
+}
+
+/* Completion ring. */
+.gradetracker-completion-ring {
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    cursor: help;
+}
+
+.gradetracker-ring-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.gradetracker-ring-bg {
+    fill: none;
+    stroke: #e9ecef;
+    stroke-width: 3;
+}
+
+.gradetracker-ring-fill {
+    fill: none;
+    stroke: #198754;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 0, 100;
+    transition: stroke-dasharray 800ms ease-out;
+}
+
+.gradetracker-ring-text {
+    fill: #495057;
+    font-size: 9px;
+    text-anchor: middle;
+    font-weight: 600;
+}
+
+/* Progress bar percentage label. */
+.gradetracker-bar-percentage {
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Course total bar emphasis. */
+.gradetracker-course-total-bar .gradetracker-stacked-bar {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Threshold legend. */
+.gradetracker-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.85em;
+    color: #6c757d;
+}
+
+.gradetracker-legend-line {
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.7);
+    vertical-align: middle;
+}
+
+.gradetracker-legend-line-pass {
+    background: #198754;
+}
+
+.gradetracker-legend-line-merit {
+    background: #0d6efd;
+}
+
+.gradetracker-legend-line-distinction {
+    background: #d4a017;
+}
+
+.gradetracker-legend-ghost {
+    display: inline-block;
+    width: 14px;
+    height: 10px;
+    border-right: 2px dashed rgba(25, 135, 84, 0.5);
+    background: rgba(25, 135, 84, 0.08);
+    vertical-align: middle;
+}
+
+.gradetracker-legend-running {
+    display: inline-block;
+    width: 3px;
+    height: 14px;
+    background: #0d6efd;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-right: 4px;
+    box-shadow: 0 0 4px rgba(13, 110, 253, 0.5);
+}
+
+/* Goal planner. */
+.gradetracker-goal-planner {
+    border-top: 1px solid #dee2e6;
+    padding-top: 1rem;
+}
+
+.gradetracker-goal-planner-title {
+    font-weight: 600;
+    color: #495057;
+}
+
+.gradetracker-goal-card {
+    flex: 1 1 140px;
+    max-width: 220px;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+    text-align: center;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.gradetracker-goal-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.gradetracker-goal-card-label {
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.gradetracker-goal-card-value {
+    font-size: 1.6em;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 0.5rem;
+}
+
+.gradetracker-goal-card-message {
+    font-size: 0.8em;
+    color: #6c757d;
+    line-height: 1.3;
+}
+
+/* Achieved state. */
+.gradetracker-goal-achieved {
+    border-color: rgba(25, 135, 84, 0.3);
+    background: rgba(25, 135, 84, 0.05);
+}
+
+.gradetracker-goal-achieved .gradetracker-goal-card-value {
+    color: #198754;
+}
+
+.gradetracker-goal-check {
+    display: inline-block;
+    animation: gradetracker-check-pop 400ms ease-out 600ms both;
+}
+
+@keyframes gradetracker-check-pop {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    60% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Not achievable state. */
+.gradetracker-goal-missed {
+    border-color: rgba(220, 53, 69, 0.2);
+    background: rgba(220, 53, 69, 0.03);
+    opacity: 0.7;
+}
+
+.gradetracker-goal-missed .gradetracker-goal-card-value {
+    color: #6c757d;
+}
+
+/* Achievable but not yet met — colour the number based on difficulty. */
+.gradetracker-goal-required {
+    transition: color 400ms ease;
+}
+
+/* ── Gamification widgets ── */
+
+.gradetracker-widgets {
+    border-top: 1px solid #dee2e6;
+    padding-top: 1rem;
+}
+
+.gradetracker-widget {
+    flex: 1 1 160px;
+    max-width: 200px;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+    text-align: center;
+    transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+.gradetracker-widget:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.gradetracker-widget-wide {
+    flex: 2 1 320px;
+    max-width: 420px;
+}
+
+.gradetracker-widget-header {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6c757d;
+    margin-bottom: 0.6rem;
+}
+
+.gradetracker-widget-hero {
+    font-size: 1.5em;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 0.3rem;
+}
+
+.gradetracker-widget-sub {
+    font-size: 0.8em;
+    color: #6c757d;
+    line-height: 1.3;
+}
+
+.gradetracker-widget-footnote {
+    font-size: 0.7em;
+    color: #adb5bd;
+    margin-top: 0.4rem;
+}
+
+/* Overall percentile. */
+.gradetracker-widget-overall .gradetracker-widget-hero {
+    color: #0d6efd;
+}
+
+/* Nearest neighbours. */
+.gradetracker-neighbour-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.85em;
+    border-radius: 4px;
+}
+
+.gradetracker-neighbour-you {
+    background: rgba(13, 110, 253, 0.08);
+    font-weight: 700;
+    border-left: 3px solid #0d6efd;
+    padding-left: calc(0.4rem - 3px);
+}
+
+.gradetracker-neighbour-pct {
+    font-weight: 600;
+}
+
+/* Improvement. */
+.gradetracker-widget-improvement .gradetracker-widget-hero.text-success {
+    color: #198754;
+}
+
+.gradetracker-widget-improvement .gradetracker-widget-hero.text-danger {
+    color: #dc3545;
+}
+
+/* Trend sparkline. */
+.gradetracker-sparkline-container {
+    margin: 0.4rem auto;
+    width: 160px;
+    height: 48px;
+}
+
+.gradetracker-sparkline {
+    display: block;
+}
+
+.gradetracker-trend-direction {
+    font-weight: 600;
+}
+
+.gradetracker-trend-up {
+    color: #198754;
+}
+
+.gradetracker-trend-up::before {
+    content: "\2191 ";
+}
+
+.gradetracker-trend-down {
+    color: #dc3545;
+}
+
+.gradetracker-trend-down::before {
+    content: "\2193 ";
+}
+
+.gradetracker-trend-steady {
+    color: #6c757d;
+}
+
+.gradetracker-trend-steady::before {
+    content: "\2192 ";
+}
+
+/* Streak. */
+.gradetracker-streak-flame {
+    font-size: 1.2em;
+    margin-right: 0.15em;
+}
+
+.gradetracker-streak-number {
+    font-size: 1.8em;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.gradetracker-streak-active .gradetracker-streak-number {
+    color: #fd7e14;
+}
+
+.gradetracker-streak-zero {
+    color: #adb5bd;
+}
+
+/* Milestone badges grid. */
+.gradetracker-badge-count {
+    font-weight: 400;
+    font-size: 0.9em;
+    color: #adb5bd;
+    margin-left: 0.3em;
+}
+
+.gradetracker-badges-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+}
+
+.gradetracker-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1em;
+    transition: transform 200ms ease;
+    cursor: help;
+}
+
+.gradetracker-badge:hover {
+    transform: scale(1.15);
+}
+
+.gradetracker-badge-earned {
+    background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(253, 126, 20, 0.3);
+}
+
+.gradetracker-badge-locked {
+    background: #e9ecef;
+    color: #adb5bd;
+}
+
+/* Unlock message. */
+.gradetracker-widget-unlock {
+    border-radius: 8px;
+}
+
+/* Preview banner. */
+.gradetracker-preview-banner {
+    border-radius: 8px;
+    border-left: 4px solid #ffc107;
+}
+
+/* Feedback engagement card (goal-card style). */
+.gradetracker-feedback-card {
+    text-align: center;
+}
+
+.gradetracker-feedback-card .gradetracker-feedback-ring {
+    width: 56px;
+    height: 56px;
+    display: inline-block;
+}
+
+.gradetracker-feedback-card .gradetracker-ring-bg {
+    stroke-width: 2.5;
+}
+
+.gradetracker-feedback-card .gradetracker-ring-fill {
+    stroke-width: 2.5;
+}
+
+.gradetracker-feedback-details {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}
+
+.gradetracker-feedback-checklist {
+    font-size: 0.82rem;
+}
+
+.gradetracker-feedback-item {
+    display: flex;
+    align-items: center;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.gradetracker-feedback-item:last-child {
+    border-bottom: none;
+}
+
+.gradetracker-feedback-link {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gradetracker-feedback-item .badge {
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.gradetracker-feedback-details-btn {
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.gradetracker-feedback-viewed .gradetracker-feedback-link {
+    color: #6c757d;
+}
+
+/* ── Risk state and action messages ── */
+
+.gradetracker-widget-risk {
+    border-left: 3px solid #fd7e14;
+    background: rgba(253, 126, 20, 0.03);
+}
+
+.gradetracker-widget-risk .gradetracker-widget-header {
+    color: #e65100;
+}
+
+.gradetracker-risk-icon {
+    color: #fd7e14;
+    font-size: 0.9em;
+}
+
+.gradetracker-widget-action {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    background: rgba(253, 126, 20, 0.08);
+    border-radius: 6px;
+    font-size: 0.72em;
+    line-height: 1.4;
+    color: #6c3b00;
+    text-align: left;
+    border-left: 2px solid #fd7e14;
+}
+
+.gradetracker-widget-guidance {
+    background: rgba(13, 110, 253, 0.06);
+    color: #084298;
+    border-left-color: #0d6efd;
+}
+
+.gradetracker-stale-badge {
+    font-size: 0.7em;
+    font-weight: 500;
+}
+
+/* ── Self-regulation tracker ── */
+
+.gradetracker-selfregulation-strong {
+    color: #198754;
+}
+
+.gradetracker-selfregulation-moderate {
+    color: #0d6efd;
+}
+
+.gradetracker-selfregulation-low {
+    color: #fd7e14;
+}
+
+.gradetracker-selfreg-hero {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.gradetracker-selfreg-hero small {
+    font-size: 0.75rem;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.gradetracker-selfreg-sparkline {
+    max-width: 120px;
+    height: 30px;
+    margin: 0.3rem auto;
+}
+
+/* ── Consistency tracker ── */
+
+.gradetracker-consistency-excellent {
+    color: #198754;
+}
+
+.gradetracker-consistency-good {
+    color: #0d6efd;
+}
+
+.gradetracker-consistency-needswork {
+    color: #fd7e14;
+}
+
+.gradetracker-consistency-timeline {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 40px;
+    margin: 0.5rem auto;
+    justify-content: center;
+    max-width: 140px;
+}
+
+.gradetracker-consistency-bar {
+    flex: 1;
+    max-width: 14px;
+    min-width: 6px;
+    background: #0d6efd;
+    border-radius: 2px 2px 0 0;
+    opacity: 0.6;
+    transition: opacity 200ms ease;
+    cursor: help;
+}
+
+.gradetracker-consistency-bar:hover {
+    opacity: 1;
+}
+
+/* ── Early bird ── */
+
+.gradetracker-earlybird-ahead {
+    color: #198754;
+}
+
+.gradetracker-earlybird-ontrack {
+    color: #0d6efd;
+}
+
+.gradetracker-earlybird-close {
+    color: #fd7e14;
+}
+
+.gradetracker-earlybird-behind {
+    color: #dc3545;
+}
+
+/* ── Community of Inquiry (COI) widgets ── */
+
+.gradetracker-coi-section {
+    border-top: 1px solid #dee2e6;
+    padding-top: 1rem;
+}
+
+.gradetracker-coi-title {
+    font-weight: 600;
+    color: #495057;
+}
+
+.gradetracker-coi-widgets {
+    padding-top: 0;
+}
+
+.gradetracker-coi-widget {
+    flex: 1 1 160px;
+    max-width: 220px;
+    border-left: 3px solid #dee2e6;
+}
+
+/* COI level badge. */
+.gradetracker-coi-level-badge {
+    display: inline-block;
+    font-size: 0.7em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    margin-bottom: 0.4rem;
+}
+
+.gradetracker-coi-level-none {
+    background: #6c757d;
+    color: #fff;
+}
+
+.gradetracker-coi-level-emerging {
+    background: #0d6efd;
+    color: #fff;
+}
+
+.gradetracker-coi-level-developing {
+    background: #198754;
+    color: #fff;
+}
+
+.gradetracker-coi-level-established {
+    background: #fd7e14;
+    color: #fff;
+}
+
+.gradetracker-coi-level-exemplary {
+    background: #d4a017;
+    color: #fff;
+}
+
+/* Border colour matches the level. */
+.gradetracker-coi-none {
+    border-left-color: #e9ecef;
+}
+
+.gradetracker-coi-emerging {
+    border-left-color: #0d6efd;
+}
+
+.gradetracker-coi-developing {
+    border-left-color: #198754;
+}
+
+.gradetracker-coi-established {
+    border-left-color: #fd7e14;
+}
+
+.gradetracker-coi-exemplary {
+    border-left-color: #d4a017;
+}
+
+/* COI breakdown list. */
+.gradetracker-coi-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.6rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+    font-size: 0.75em;
+    color: #6c757d;
+}
+
+.gradetracker-coi-breakdown-count {
+    font-weight: 700;
+    color: #495057;
+}
+
+/* COI feedback loop ring. */
+.gradetracker-coi-ring {
+    width: 48px;
+    height: 48px;
+}
+
+/* ── Teacher Insights view ── */
+
+.gradetracker-insights {
+    max-width: 720px;
+}
+
+/* Risk summary header. */
+.gradetracker-insights-header {
+    border-radius: 8px;
+    border-left: 4px solid #dee2e6;
+}
+
+.gradetracker-risk-healthy {
+    background: rgba(25, 135, 84, 0.06);
+    border-left-color: #198754;
+}
+
+.gradetracker-risk-healthy .gradetracker-insights-risk-icon {
+    color: #198754;
+}
+
+.gradetracker-risk-moderate {
+    background: rgba(253, 126, 20, 0.06);
+    border-left-color: #fd7e14;
+}
+
+.gradetracker-risk-moderate .gradetracker-insights-risk-icon {
+    color: #fd7e14;
+}
+
+.gradetracker-risk-high {
+    background: rgba(220, 53, 69, 0.06);
+    border-left-color: #dc3545;
+}
+
+.gradetracker-risk-high .gradetracker-insights-risk-icon {
+    color: #dc3545;
+}
+
+/* Quick stats chips. */
+.gradetracker-stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    font-size: 0.85em;
+}
+
+.gradetracker-stat-label {
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.gradetracker-stat-value {
+    font-weight: 700;
+    color: #212529;
+}
+
+.gradetracker-stat-risk {
+    border-color: rgba(220, 53, 69, 0.3);
+    background: rgba(220, 53, 69, 0.05);
+}
+
+.gradetracker-stat-risk .gradetracker-stat-value {
+    color: #dc3545;
+}
+
+/* Diagnostic insight cards. */
+.gradetracker-insight-card {
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+}
+
+.gradetracker-insight-card-header {
+    padding: 0.6rem 1rem;
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.gradetracker-insight-card-body {
+    padding: 0.75rem 1rem;
+    font-size: 0.88em;
+    line-height: 1.5;
+}
+
+.gradetracker-insight-diagnostic {
+    margin-bottom: 0.5rem;
+}
+
+.gradetracker-insight-label {
+    font-weight: 600;
+    margin-right: 0.3rem;
+}
+
+/* Danger severity card. */
+.gradetracker-insight-danger .gradetracker-insight-card-header {
+    background: rgba(220, 53, 69, 0.08);
+    color: #842029;
+    border-bottom: 1px solid rgba(220, 53, 69, 0.15);
+}
+
+.gradetracker-insight-danger {
+    border-color: rgba(220, 53, 69, 0.25);
+}
+
+.gradetracker-insight-danger .gradetracker-insight-action {
+    color: #842029;
+}
+
+/* Warning severity card. */
+.gradetracker-insight-warning .gradetracker-insight-card-header {
+    background: rgba(253, 126, 20, 0.08);
+    color: #6c3b00;
+    border-bottom: 1px solid rgba(253, 126, 20, 0.15);
+}
+
+.gradetracker-insight-warning {
+    border-color: rgba(253, 126, 20, 0.25);
+}
+
+.gradetracker-insight-warning .gradetracker-insight-action {
+    color: #6c3b00;
+}
+
+.gradetracker-insight-info .gradetracker-insight-card-header {
+    background: rgba(13, 110, 253, 0.08);
+    color: #084298;
+    border-bottom: 2px solid rgba(13, 110, 253, 0.15);
+}
+
+.gradetracker-insight-info {
+    border-color: rgba(13, 110, 253, 0.2);
+}
+
+.gradetracker-insight-info .gradetracker-insight-action {
+    color: #084298;
+}
+
+.gradetracker-coursedesign-notice {
+    border-left: 3px solid #0d6efd;
+    padding-left: 0;
+}
+
+.gradetracker-cohort-crossgroup-diagnostics {
+    border-top: 1px solid #dee2e6;
+    padding-top: 0.75rem;
+}
+
+.gradetracker-cohort-subsection-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #6c757d;
+}
+
+/* ── Cohort Insights view ── */
+
+.gradetracker-cohort-insights {
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.gradetracker-cohort-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+/* Presence cards. */
+.gradetracker-presence-card {
+    min-width: 220px;
+    padding: 1.1rem 1.2rem;
+    border-radius: 10px;
+    border: 1px solid #dee2e6;
+    background: #fff;
+}
+
+.gradetracker-presence-card-title {
+    font-size: 0.92em;
+}
+
+.gradetracker-presence-bars {
+    height: 100px;
+    padding-top: 20px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-bottom: 2px;
+}
+
+.gradetracker-presence-bar-group {
+    min-width: 0;
+    position: relative;
+    height: 100%;
+}
+
+.gradetracker-presence-bar {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 65%;
+    max-width: 32px;
+    border-radius: 4px 4px 0 0;
+    transition: height 600ms ease;
+}
+
+.gradetracker-presence-count {
+    position: absolute;
+    top: -18px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #495057;
+}
+
+.gradetracker-presence-bar-none {
+    background: #adb5bd;
+}
+
+.gradetracker-presence-bar-emerging {
+    background: #0d6efd;
+}
+
+.gradetracker-presence-bar-developing {
+    background: #198754;
+}
+
+.gradetracker-presence-bar-established {
+    background: #fd7e14;
+}
+
+.gradetracker-presence-bar-exemplary {
+    background: #d4a017;
+}
+
+.gradetracker-presence-bar-label {
+    font-size: 0.72em;
+    color: #495057;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+/* Presence legend dots. */
+.gradetracker-presence-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 2px;
+    vertical-align: middle;
+}
+
+.gradetracker-presence-dot-none {
+    background: #e9ecef;
+}
+
+.gradetracker-presence-dot-emerging {
+    background: #0d6efd;
+}
+
+.gradetracker-presence-dot-developing {
+    background: #198754;
+}
+
+.gradetracker-presence-dot-established {
+    background: #fd7e14;
+}
+
+.gradetracker-presence-dot-exemplary {
+    background: #d4a017;
+}
+
+.gradetracker-presence-health {
+    font-size: 0.8em;
+}
+
+/* Grade distribution chart. */
+.gradetracker-distribution-chart {
+    height: 140px;
+    align-items: flex-end;
+    padding-bottom: 0;
+}
+
+.gradetracker-distribution-bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+}
+
+.gradetracker-distribution-bar {
+    width: 70%;
+    max-width: 60px;
+    min-height: 2px;
+    background: #0d6efd;
+    border-radius: 3px 3px 0 0;
+    transition: height 600ms ease;
+}
+
+.gradetracker-distribution-count {
+    font-size: 0.75em;
+    font-weight: 600;
+}
+
+.gradetracker-distribution-label {
+    font-size: 0.7em;
+    white-space: nowrap;
+}
+
+/* Stale student chips. */
+.gradetracker-stale-chip {
+    font-size: 0.82em;
+    padding: 0.3rem 0.6rem;
+}
+
+.gradetracker-stale-chip:hover {
+    opacity: 0.85;
+}
+
+/* Cross-group and cross-teacher comparison tables. */
+.gradetracker-crossgroup-table,
+.gradetracker-crossteacher-table {
+    font-size: 0.88em;
+}
+
+.gradetracker-crossgroup-table th,
+.gradetracker-crossteacher-table th {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.gradetracker-crossgroup-table .table-active {
+    background-color: rgba(13, 110, 253, 0.06) !important;
+}
+
+.gradetracker-crossgroup-table tfoot td {
+    border-top: 2px solid #dee2e6;
+}
+
+/* Diagnostic card detail link. */
+.gradetracker-insight-card-footer {
+    padding: 0.5rem 1rem 0.7rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.gradetracker-detail-link {
+    font-size: 0.78em;
+    color: #6c757d;
+    text-decoration: none;
+    transition: color 200ms ease;
+}
+
+.gradetracker-detail-link:hover {
+    color: #0d6efd;
+    text-decoration: underline;
+}
+
+/* Detail modal styles. */
+.gradetracker-detail-header {
+    border-bottom: 2px solid;
+}
+
+.gradetracker-detail-header-warning {
+    background: #fff8e1;
+    border-color: #ffc107;
+    color: #856404;
+}
+
+.gradetracker-detail-header-danger {
+    background: #fce4ec;
+    border-color: #dc3545;
+    color: #842029;
+}
+
+.gradetracker-detail-header-info {
+    background: #e7f1ff;
+    border-color: #0d6efd;
+    color: #084298;
+}
+
+.gradetracker-detail-section-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.6rem;
+}
+
+.gradetracker-detail-text {
+    font-size: 0.88em;
+    line-height: 1.65;
+    color: #495057;
+}
+
+.gradetracker-logdata-table-wrap {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+}
+
+.gradetracker-logdata-table {
+    font-size: 0.82em;
+    margin-bottom: 0;
+}
+
+.gradetracker-logdata-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6c757d;
+}
+
+.gradetracker-logdata-highlight td {
+    background-color: rgba(255, 193, 7, 0.12);
+}
+
+.gradetracker-detail-metric-chip {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0.85rem;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    min-width: 120px;
+}
+
+.gradetracker-detail-metric-label {
+    font-size: 0.72em;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+}
+
+.gradetracker-detail-metric-value {
+    font-size: 1.05em;
+    font-weight: 700;
+    color: #212529;
+}
+
+.gradetracker-detail-threshold-table {
+    font-size: 0.88em;
+}
+
+.gradetracker-detail-threshold-label {
+    font-weight: 600;
+    color: #495057;
+    white-space: nowrap;
+    width: 1%;
+    padding-right: 1rem !important;
+}
+
+.gradetracker-detail-student-table {
+    font-size: 0.88em;
+}
+
+/* Risk quadrant scatter chart */
+.gradetracker-riskquadrant-container {
+    position: relative;
+    max-width: 800px;
+    min-height: 400px;
+}
+
+/* Sociogram */
+.gradetracker-sociogram-container {
+    position: relative;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    background: #fafbfc;
+    overflow: hidden;
+    min-height: 300px;
+}
+
+.gradetracker-sociogram-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.gradetracker-sociogram-label {
+    font-size: 10px;
+    fill: #6c757d;
+    pointer-events: none;
+}
+
+.gradetracker-sociogram-node {
+    cursor: pointer;
+}
+
+.gradetracker-sociogram-node:hover circle {
+    stroke: #343a40;
+    stroke-width: 3;
+}
+
+.gradetracker-sociogram-tooltip {
+    position: absolute;
+    background: rgba(33, 37, 41, 0.92);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.82em;
+    line-height: 1.4;
+    pointer-events: none;
+    z-index: 10;
+    white-space: nowrap;
+}
+
+.gradetracker-sociogram-legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.gradetracker-sociogram-dot-green {
+    background: #28a745;
+}
+
+.gradetracker-sociogram-dot-amber {
+    background: #ffc107;
+}
+
+.gradetracker-sociogram-dot-red {
+    background: #dc3545;
+}
+
+.gradetracker-sociogram-dot-grey {
+    background: #adb5bd;
+}
+
+/* Self-regulation composite indicators */
+.gradetracker-selfreg-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0.35rem 0 0.25rem;
+}
+
+.gradetracker-selfreg-indicator {
+    position: relative;
+    height: 18px;
+    background: #f0f0f0;
+    border-radius: 9px;
+    overflow: hidden;
+    cursor: default;
+}
+
+.gradetracker-selfreg-indicator-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #28a745 0%, #1c8c3a 100%);
+    border-radius: 9px;
+    min-width: 2px;
+    transition: width 0.6s ease;
+}
+
+.gradetracker-widget-risk .gradetracker-selfreg-indicator-bar {
+    background: linear-gradient(90deg, #dc3545 0%, #c82333 100%);
+}
+
+.gradetracker-selfreg-indicator-label {
+    position: relative;
+    z-index: 1;
+    display: block;
+    font-size: 0.68em;
+    line-height: 18px;
+    padding: 0 6px;
+    color: #333;
+    white-space: nowrap;
+}
+
+/* Self-regulation explanation panel */
+.gradetracker-selfreg-explain-btn {
+    font-size: 0.72em;
+    color: #6c757d;
+}
+
+.gradetracker-selfreg-explain {
+    font-size: 0.78em;
+    line-height: 1.5;
+    color: #495057;
+}
+
+.gradetracker-selfreg-explain dt {
+    font-weight: 600;
+    margin-top: 0.3rem;
+}
+
+.gradetracker-selfreg-explain dd {
+    margin-left: 0;
+    margin-bottom: 0.15rem;
+    color: #6c757d;
+}
+
+/* ── Coordinator tab ── */
+
+.gradereport-coifish-coordinator .card {
+    border-radius: 0.5rem;
+}
+
+.gradereport-coifish-coordinator .card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.gradereport-coifish-coordinator .table th {
+    font-size: 0.8rem;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.gradereport-coifish-coordinator .table td {
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+
+.gradetracker-coordinator-chart {
+    min-height: 200px;
+}

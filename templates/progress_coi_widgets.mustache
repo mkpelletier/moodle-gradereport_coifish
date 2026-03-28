@@ -1,0 +1,186 @@
+{{!
+    @template gradereport_coifish/progress_coi_widgets
+
+    Community of Inquiry (COI) widgets section.
+
+    Renders COI framework widgets in their own section, separate from
+    gamification widgets. Each widget measures a dimension of the COI
+    framework: social presence, cognitive presence, or teaching presence.
+
+    Context variables required for this template:
+    * coi.haswidgets (bool) - Whether any COI widgets are enabled and have data.
+    * coi.widgets (array) - Array of COI widget objects.
+      * iscoicommunity (bool) - Community engagement widget.
+      * iscoipeerconnection (bool) - Peer connection widget.
+      * iscoilearningdepth (bool) - Course engagement widget.
+      * iscoifeedbackloop (bool) - Feedback loop widget.
+      * title (string) - Widget title.
+      * total (int) - Total activity count.
+      * level (object) - Engagement level with label and class.
+      * breakdown (array) - Activity breakdown items.
+      * hasbreakdown (bool) - Whether breakdown items exist.
+      * action (string) - Graduated action message.
+      * hasaction (bool) - Whether an action message exists.
+      * isrisk (bool) - Whether the widget is in a risk state.
+      * isstale (bool) - Whether activity has gone cold (14+ days).
+      * daysinactive (int|null) - Days since last activity.
+
+    Example context (json):
+    {
+        "coi": {
+            "haswidgets": true,
+            "widgets": [
+                {
+                    "iscoicommunity": true,
+                    "title": "Community engagement",
+                    "total": 12,
+                    "isrisk": false,
+                    "isstale": false,
+                    "daysinactive": 3,
+                    "level": {
+                        "level": 2,
+                        "label": "Developing",
+                        "class": "developing"
+                    },
+                    "breakdown": [
+                        {"label": "Discussions", "count": 3},
+                        {"label": "Replies", "count": 9}
+                    ],
+                    "hasbreakdown": true,
+                    "action": "You're building community. Consider starting a new discussion.",
+                    "hasaction": true
+                }
+            ]
+        }
+    }
+}}
+{{#coi.haswidgets}}
+    <div class="gradetracker-coi-section mt-4">
+        <h5 class="gradetracker-coi-title mb-3">
+            <i class="fa fa-users me-1" aria-hidden="true"></i>
+            {{#str}}coi, gradereport_coifish{{/str}}
+        </h5>
+        <div class="gradetracker-coi-widgets d-flex flex-wrap gap-3">
+
+            {{#coi.widgets}}
+
+                {{! Community Engagement (Social Presence) }}
+                {{#iscoicommunity}}
+                    <div class="gradetracker-widget gradetracker-coi-widget gradetracker-coi-{{level.class}} {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                        <div class="gradetracker-widget-header">
+                            {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                            {{title}}
+                            {{#isstale}}<span class="badge bg-warning text-dark ms-auto gradetracker-stale-badge"><i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{daysinactive}}d</span>{{/isstale}}
+                        </div>
+                        <div class="gradetracker-coi-level-badge gradetracker-coi-level-{{level.class}}">
+                            {{level.label}}
+                        </div>
+                        <div class="gradetracker-widget-hero">{{total}}</div>
+                        <div class="gradetracker-widget-sub">contributions</div>
+                        {{#hasbreakdown}}
+                            <div class="gradetracker-coi-breakdown">
+                                {{#breakdown}}
+                                    <span class="gradetracker-coi-breakdown-item">
+                                        <span class="gradetracker-coi-breakdown-count">{{count}}</span> {{label}}
+                                    </span>
+                                {{/breakdown}}
+                            </div>
+                        {{/hasbreakdown}}
+                        {{#hasaction}}
+                            <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
+                        {{/hasaction}}
+                    </div>
+                {{/iscoicommunity}}
+
+                {{! Peer Connection (Social Presence) }}
+                {{#iscoipeerconnection}}
+                    <div class="gradetracker-widget gradetracker-coi-widget gradetracker-coi-{{level.class}} {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                        <div class="gradetracker-widget-header">
+                            {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                            {{title}}
+                            {{#isstale}}<span class="badge bg-warning text-dark ms-auto gradetracker-stale-badge"><i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{daysinactive}}d</span>{{/isstale}}
+                        </div>
+                        <div class="gradetracker-coi-level-badge gradetracker-coi-level-{{level.class}}">
+                            {{level.label}}
+                        </div>
+                        <div class="gradetracker-widget-hero">{{total}}</div>
+                        <div class="gradetracker-widget-sub">interactions</div>
+                        {{#hasbreakdown}}
+                            <div class="gradetracker-coi-breakdown">
+                                {{#breakdown}}
+                                    <span class="gradetracker-coi-breakdown-item">
+                                        <span class="gradetracker-coi-breakdown-count">{{count}}</span> {{label}}
+                                    </span>
+                                {{/breakdown}}
+                            </div>
+                        {{/hasbreakdown}}
+                        {{#hasaction}}
+                            <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
+                        {{/hasaction}}
+                    </div>
+                {{/iscoipeerconnection}}
+
+                {{! Course Engagement (Cognitive Presence) }}
+                {{#iscoilearningdepth}}
+                    <div class="gradetracker-widget gradetracker-coi-widget gradetracker-coi-{{level.class}} {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                        <div class="gradetracker-widget-header">
+                            {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                            {{title}}
+                            {{#isstale}}<span class="badge bg-warning text-dark ms-auto gradetracker-stale-badge"><i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{daysinactive}}d</span>{{/isstale}}
+                        </div>
+                        <div class="gradetracker-coi-level-badge gradetracker-coi-level-{{level.class}}">
+                            {{level.label}}
+                        </div>
+                        <div class="gradetracker-widget-hero">{{total}}</div>
+                        <div class="gradetracker-widget-sub">engagements</div>
+                        {{#hasbreakdown}}
+                            <div class="gradetracker-coi-breakdown">
+                                {{#breakdown}}
+                                    <span class="gradetracker-coi-breakdown-item">
+                                        <span class="gradetracker-coi-breakdown-count">{{count}}</span> {{label}}
+                                    </span>
+                                {{/breakdown}}
+                            </div>
+                        {{/hasbreakdown}}
+                        {{#hasaction}}
+                            <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
+                        {{/hasaction}}
+                    </div>
+                {{/iscoilearningdepth}}
+
+                {{! Feedback Loop (Teaching Presence) }}
+                {{#iscoifeedbackloop}}
+                    <div class="gradetracker-widget gradetracker-coi-widget gradetracker-coi-{{level.class}} {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                        <div class="gradetracker-widget-header">
+                            {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                            {{title}}
+                            {{#isstale}}<span class="badge bg-warning text-dark ms-auto gradetracker-stale-badge"><i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{daysinactive}}d</span>{{/isstale}}
+                        </div>
+                        <div class="gradetracker-coi-level-badge gradetracker-coi-level-{{level.class}}">
+                            {{level.label}}
+                        </div>
+                        <div class="gradetracker-widget-hero">
+                            <span class="gradetracker-completion-ring gradetracker-coi-ring"
+                                  data-graded="{{viewed}}"
+                                  data-total="{{total}}">
+                                <svg viewBox="0 0 36 36" class="gradetracker-ring-svg">
+                                    <path class="gradetracker-ring-bg"
+                                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                    <path class="gradetracker-ring-fill"
+                                          stroke-dasharray="0, 100"
+                                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                    <text x="18" y="21" class="gradetracker-ring-text">{{percent}}%</text>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="gradetracker-widget-sub">{{viewed}}/{{total}} feedback viewed</div>
+                        {{#hasaction}}
+                            <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
+                        {{/hasaction}}
+                    </div>
+                {{/iscoifeedbackloop}}
+
+            {{/coi.widgets}}
+        </div>
+    </div>
+{{/coi.haswidgets}}

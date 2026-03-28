@@ -1,0 +1,175 @@
+{{!
+    @template gradereport_coifish/setting_configlevels
+
+    Four-level boundary editor with visual zone bar for COI presence levels.
+
+    Context variables required:
+    * id (string) - Unique HTML element ID.
+    * name (string) - Form field name.
+    * handles (array) - Array of 4 handle objects.
+      * index (int) - Handle index (0–3).
+      * value (int) - Current boundary value (0–100).
+      * label (string) - Level label (e.g. 'Emerging').
+    * readonly (bool) - Whether the setting is locked.
+
+    Example context (json):
+    {
+        "id": "id_s_gradereport_coifish_coi_levels_sp",
+        "name": "s_gradereport_coifish_coi_levels_sp",
+        "handles": [
+            {"index": 0, "value": 1, "label": "Emerging"},
+            {"index": 1, "value": 20, "label": "Developing"},
+            {"index": 2, "value": 50, "label": "Established"},
+            {"index": 3, "value": 80, "label": "Exemplary"}
+        ],
+        "readonly": false
+    }
+}}
+<div class="gradetracker-levels-wrap" id="{{id}}_wrap">
+    {{! Visual zone bar }}
+    <div class="gradetracker-levels-bar mb-2" id="{{id}}_bar">
+        <div class="gradetracker-levels-zone gradetracker-zone-none" id="{{id}}_zone0"></div>
+        <div class="gradetracker-levels-zone gradetracker-zone-emerging" id="{{id}}_zone1"></div>
+        <div class="gradetracker-levels-zone gradetracker-zone-developing" id="{{id}}_zone2"></div>
+        <div class="gradetracker-levels-zone gradetracker-zone-established" id="{{id}}_zone3"></div>
+        <div class="gradetracker-levels-zone gradetracker-zone-exemplary" id="{{id}}_zone4"></div>
+    </div>
+
+    {{! Per-handle sliders }}
+    {{#handles}}
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="gradetracker-levels-label gradetracker-zone-dot gradetracker-zone-dot-{{index}}"></span>
+            <span class="gradetracker-levels-label-text small" style="min-width:90px;">{{label}}</span>
+            <input type="range"
+                   id="{{id}}_h{{index}}"
+                   value="{{value}}"
+                   min="0"
+                   max="100"
+                   step="1"
+                   class="gradetracker-levels-slider"
+                   data-index="{{index}}"
+                   {{#readonly}}disabled{{/readonly}}>
+            <span class="gradetracker-levels-val badge bg-light text-dark border" id="{{id}}_v{{index}}">{{value}}%</span>
+            <input type="hidden" name="{{name}}[]" value="{{value}}" id="{{id}}_input{{index}}">
+        </div>
+    {{/handles}}
+</div>
+<style>
+    .gradetracker-levels-wrap {
+        max-width: 500px;
+    }
+    .gradetracker-levels-bar {
+        display: flex;
+        height: 14px;
+        border-radius: 7px;
+        overflow: hidden;
+        border: 1px solid #dee2e6;
+    }
+    .gradetracker-levels-zone {
+        transition: width .15s ease;
+    }
+    .gradetracker-zone-none        { background: #e9ecef; }
+    .gradetracker-zone-emerging    { background: #ffc107; }
+    .gradetracker-zone-developing  { background: #0dcaf0; }
+    .gradetracker-zone-established { background: #198754; }
+    .gradetracker-zone-exemplary   { background: #6f42c1; }
+
+    .gradetracker-zone-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .gradetracker-zone-dot-0 { background: #ffc107; }
+    .gradetracker-zone-dot-1 { background: #0dcaf0; }
+    .gradetracker-zone-dot-2 { background: #198754; }
+    .gradetracker-zone-dot-3 { background: #6f42c1; }
+
+    .gradetracker-levels-slider {
+        flex: 1;
+        min-width: 140px;
+        height: 5px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: #dee2e6;
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+    }
+    .gradetracker-levels-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #495057;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    }
+    .gradetracker-levels-slider::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #495057;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    }
+    .gradetracker-levels-val {
+        min-width: 42px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.8rem;
+    }
+    .gradetracker-levels-label-text {
+        color: #6c757d;
+    }
+</style>
+<script>
+    (function() {
+        var id = '{{id}}';
+        var sliders = [];
+        var inputs = [];
+        var displays = [];
+        for (var i = 0; i < 4; i++) {
+            sliders[i] = document.getElementById(id + '_h' + i);
+            inputs[i] = document.getElementById(id + '_input' + i);
+            displays[i] = document.getElementById(id + '_v' + i);
+        }
+
+        function getValues() {
+            return sliders.map(function(s) { return parseInt(s.value, 10); });
+        }
+
+        function updateBar() {
+            var vals = getValues().slice().sort(function(a, b) { return a - b; });
+            // Zone widths: [0..v0), [v0..v1), [v1..v2), [v2..v3), [v3..100]
+            var zones = [
+                vals[0],
+                vals[1] - vals[0],
+                vals[2] - vals[1],
+                vals[3] - vals[2],
+                100 - vals[3]
+            ];
+            for (var z = 0; z < 5; z++) {
+                var el = document.getElementById(id + '_zone' + z);
+                if (el) el.style.width = Math.max(zones[z], 0) + '%';
+            }
+        }
+
+        sliders.forEach(function(slider, idx) {
+            if (!slider) return;
+            slider.addEventListener('input', function() {
+                var val = parseInt(this.value, 10);
+                displays[idx].textContent = val + '%';
+                inputs[idx].value = val;
+                updateBar();
+            });
+        });
+
+        // Initial bar render.
+        updateBar();
+    })();
+</script>

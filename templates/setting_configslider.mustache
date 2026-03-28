@@ -1,0 +1,100 @@
+{{!
+    @template gradereport_coifish/setting_configslider
+
+    Range slider with live value display for admin settings.
+
+    Context variables required:
+    * id (string) - Unique HTML element ID.
+    * name (string) - Form field name.
+    * value (int) - Current slider value.
+    * min (int) - Minimum value.
+    * max (int) - Maximum value.
+    * step (int) - Step increment.
+    * unit (string) - Unit suffix (e.g. '%', ' days').
+    * readonly (bool) - Whether the setting is locked.
+
+    Example context (json):
+    {
+        "id": "id_s_gradereport_coifish_threshold_pass",
+        "name": "s_gradereport_coifish_threshold_pass",
+        "value": 50,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "unit": "%",
+        "readonly": false
+    }
+}}
+<div class="gradetracker-slider-wrap d-flex align-items-center gap-3" id="{{id}}_wrap">
+    <input type="range"
+           id="{{id}}"
+           name="{{name}}"
+           value="{{value}}"
+           min="{{min}}"
+           max="{{max}}"
+           step="{{step}}"
+           class="gradetracker-slider-input"
+           {{#readonly}}disabled{{/readonly}}>
+    <span class="gradetracker-slider-value badge bg-primary" id="{{id}}_display">{{value}}{{unit}}</span>
+    <span class="text-muted small">{{min}}{{unit}} – {{max}}{{unit}}</span>
+</div>
+<style>
+    .gradetracker-slider-wrap {
+        min-width: 320px;
+    }
+    .gradetracker-slider-input {
+        flex: 1;
+        min-width: 180px;
+        height: 6px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: #dee2e6;
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+    }
+    .gradetracker-slider-input::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #0d6efd;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .gradetracker-slider-input::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #0d6efd;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .gradetracker-slider-input:focus::-webkit-slider-thumb {
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, .25);
+    }
+    .gradetracker-slider-input:disabled {
+        opacity: .5;
+        cursor: not-allowed;
+    }
+    .gradetracker-slider-value {
+        min-width: 50px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+<script>
+    (function() {
+        var slider = document.getElementById('{{id}}');
+        var display = document.getElementById('{{id}}_display');
+        var unit = '{{unit}}';
+        if (slider && display) {
+            slider.addEventListener('input', function() {
+                display.textContent = this.value + unit;
+            });
+        }
+    })();
+</script>

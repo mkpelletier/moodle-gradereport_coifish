@@ -1,0 +1,321 @@
+{{!
+    @template gradereport_coifish/coordinator_report
+
+    Template for the coordinator view showing teacher engagement analytics.
+
+    Context variables required for this template:
+    * hasdata (bool) - Whether teacher engagement data is available.
+    * coursename (string) - The course name.
+    * hasbbb (bool) - Whether BigBlueButton is installed.
+    * teachers (array) - Array of teacher engagement data.
+    * summary (object) - Summary statistics.
+    * recommendations (array) - Prescriptive recommendations.
+    * hasrecommendations (bool) - Whether there are recommendations.
+    * chartjson (string) - JSON data for the engagement chart.
+
+    Example context (json):
+    {
+        "hasdata": true,
+        "coursename": "Introduction to Theology",
+        "hasbbb": false,
+        "teachers": [],
+        "summary": {"teachercount": 2, "avgscore": 55},
+        "recommendations": [],
+        "hasrecommendations": false
+    }
+}}
+<div class="gradereport-coifish-coordinator mt-3">
+    <div class="d-flex align-items-center mb-3">
+        <h4 class="mb-0">
+            <i class="fa fa-briefcase me-2 text-muted" aria-hidden="true"></i>
+            {{#str}}coordinator_tab_title, gradereport_coifish{{/str}}
+        </h4>
+    </div>
+
+    {{^hasdata}}
+        <div class="alert alert-info">
+            <i class="fa fa-info-circle me-1" aria-hidden="true"></i>
+            {{#str}}coord_no_teachers, gradereport_coifish{{/str}}
+        </div>
+    {{/hasdata}}
+
+    {{#hasdata}}
+        {{! ── Summary cards ── }}
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-lg-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">{{#str}}coord_summary_teachers, gradereport_coifish{{/str}}</div>
+                        <div class="fs-2 fw-bold">{{summary.teachercount}}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">{{#str}}coord_summary_avgscore, gradereport_coifish{{/str}}</div>
+                        <div class="fs-2 fw-bold
+                            {{#summary}}
+                                {{#avgscore}}
+                                    {{^highavg}}{{^modavg}}text-danger{{/modavg}}{{/highavg}}
+                                {{/avgscore}}
+                            {{/summary}}
+                        ">{{summary.avgscore}}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card text-center h-100 {{#summary}}{{#lowcount}}border-danger{{/lowcount}}{{/summary}}">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">{{#str}}coord_summary_low, gradereport_coifish{{/str}}</div>
+                        <div class="fs-2 fw-bold text-danger">{{summary.lowcount}}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card text-center h-100">
+                    <div class="card-body py-3">
+                        <div class="text-muted small">{{#str}}coord_summary_high, gradereport_coifish{{/str}}</div>
+                        <div class="fs-2 fw-bold text-success">{{summary.highcount}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{! ── Recommendations ── }}
+        {{#hasrecommendations}}
+            <div class="mb-4">
+                <h5>
+                    <i class="fa fa-lightbulb-o me-1" aria-hidden="true"></i>
+                    {{#str}}coord_recommendations, gradereport_coifish{{/str}}
+                </h5>
+                {{#recommendations}}
+                    <div class="alert alert-{{severity}} d-flex align-items-start py-2">
+                        <i class="fa fa-{{icon}} me-2 mt-1" aria-hidden="true"></i>
+                        <span>{{{text}}}</span>
+                    </div>
+                {{/recommendations}}
+            </div>
+        {{/hasrecommendations}}
+
+        {{! ── Engagement breakdown chart ── }}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fa fa-bar-chart me-1" aria-hidden="true"></i>
+                    {{#str}}coord_chart_title, gradereport_coifish{{/str}}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="gradetracker-coordinator-chart"
+                     class="gradetracker-coordinator-chart"
+                     data-chart="{{chartjson}}"
+                     style="position: relative; max-width: 900px; margin: 0 auto;">
+                    <canvas id="gradetracker-coordinator-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        {{! ── Teacher engagement table ── }}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fa fa-users me-1" aria-hidden="true"></i>
+                    {{#str}}coord_table_title, gradereport_coifish{{/str}}
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>{{#str}}coord_col_teacher, gradereport_coifish{{/str}}</th>
+                                <th class="text-center" title="{{#str}}coord_col_composite_title, gradereport_coifish{{/str}}">
+                                    {{#str}}coord_col_composite, gradereport_coifish{{/str}}
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_insights_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-eye" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_grading_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-check-square-o" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_forum_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-comments" aria-hidden="true"></i>
+                                </th>
+                                {{#hasbbb}}
+                                <th class="text-center" title="{{#str}}coord_col_bbb_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-video-camera" aria-hidden="true"></i>
+                                </th>
+                                {{/hasbbb}}
+                                <th class="text-center" title="{{#str}}coord_col_monitoring_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-line-chart" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_content_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-pencil" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_messaging_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-envelope" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}coord_col_lastactivity_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-clock-o" aria-hidden="true"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{#teachers}}
+                            <tr class="{{#isstale}}table-warning{{/isstale}}">
+                                <td>
+                                    <strong>{{fullname}}</strong>
+                                    {{#isstale}}
+                                        <span class="badge bg-warning text-dark ms-1" title="{{#str}}coord_stale_badge, gradereport_coifish{{/str}}">
+                                            <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+                                        </span>
+                                    {{/isstale}}
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge {{#ishigh}}bg-success{{/ishigh}}{{#ismoderate}}bg-warning text-dark{{/ismoderate}}{{#islow}}bg-danger{{/islow}}">
+                                        {{composite}}%
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    <span title="{{insightsvisits}} {{#str}}coord_visits_total, gradereport_coifish{{/str}} ({{insightspw}}/{{#str}}coord_per_week, gradereport_coifish{{/str}})">
+                                        {{insightspw}}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    {{#avgturnarounddays}}
+                                        <span title="{{gradedcount}} {{#str}}coord_items_graded, gradereport_coifish{{/str}}">
+                                            {{avgturnarounddays}}d
+                                        </span>
+                                    {{/avgturnarounddays}}
+                                    {{^avgturnarounddays}}
+                                        <span class="text-muted">-</span>
+                                    {{/avgturnarounddays}}
+                                </td>
+                                <td class="text-center">
+                                    <span title="{{forumposts}} {{#str}}coord_posts_total, gradereport_coifish{{/str}} ({{forumreplies}} {{#str}}coord_replies, gradereport_coifish{{/str}})">
+                                        {{forumpostspw}}
+                                    </span>
+                                </td>
+                                {{#hasbbb}}
+                                <td class="text-center">
+                                    <span title="{{bbbsessions}} {{#str}}coord_sessions_total, gradereport_coifish{{/str}}">
+                                        {{bbbsessions}}
+                                    </span>
+                                </td>
+                                {{/hasbbb}}
+                                <td class="text-center">
+                                    <span title="{{gradeviews}} {{#str}}coord_views_total, gradereport_coifish{{/str}}">
+                                        {{gradeviewspw}}
+                                    </span>
+                                </td>
+                                <td class="text-center">
+                                    {{contentupdates}}
+                                </td>
+                                <td class="text-center">
+                                    <span title="{{messagessent}} {{#str}}coord_messages_total, gradereport_coifish{{/str}}">
+                                        {{messagespw}}
+                                    </span>
+                                </td>
+                                <td class="text-center text-nowrap small">
+                                    {{#haslastactivity}}
+                                        {{daysincelast}}d {{#str}}coord_ago, gradereport_coifish{{/str}}
+                                    {{/haslastactivity}}
+                                    {{^haslastactivity}}
+                                        <span class="text-muted">-</span>
+                                    {{/haslastactivity}}
+                                </td>
+                            </tr>
+                            {{/teachers}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {{! ── Methodology modal ── }}
+        <div class="text-center mt-3">
+            <a href="#" data-bs-toggle="modal" data-bs-target="#gradetracker-coord-method-modal" class="small text-muted">
+                <i class="fa fa-question-circle me-1" aria-hidden="true"></i>
+                {{#str}}coord_how_calculated, gradereport_coifish{{/str}}
+            </a>
+        </div>
+        <div class="modal fade" id="gradetracker-coord-method-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fa fa-info-circle me-1" aria-hidden="true"></i>
+                            {{#str}}coord_method_title, gradereport_coifish{{/str}}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>{{#str}}coord_method_intro, gradereport_coifish{{/str}}</p>
+                        <table class="table table-sm table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{{#str}}coord_method_indicator, gradereport_coifish{{/str}}</th>
+                                    <th class="text-center">{{#str}}coord_method_weight, gradereport_coifish{{/str}}</th>
+                                    <th>{{#str}}coord_method_benchmark, gradereport_coifish{{/str}}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>{{#str}}coord_method_grading, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">20%</td>
+                                    <td>{{#str}}coord_method_grading_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_insights, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">15%</td>
+                                    <td>{{#str}}coord_method_insights_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_forum, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">15%</td>
+                                    <td>{{#str}}coord_method_forum_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_bbb, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">10%</td>
+                                    <td>{{#str}}coord_method_bbb_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_monitoring, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">10%</td>
+                                    <td>{{#str}}coord_method_monitoring_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_content, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">10%</td>
+                                    <td>{{#str}}coord_method_content_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_messaging, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">10%</td>
+                                    <td>{{#str}}coord_method_messaging_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                                <tr>
+                                    <td>{{#str}}coord_method_active, gradereport_coifish{{/str}}</td>
+                                    <td class="text-center">10%</td>
+                                    <td>{{#str}}coord_method_active_bench, gradereport_coifish{{/str}}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="alert alert-secondary small mt-3 mb-0">
+                            <i class="fa fa-book me-1" aria-hidden="true"></i>
+                            {{#str}}coord_method_citation, gradereport_coifish{{/str}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{#js}}
+            require(['gradereport_coifish/coordinator'], function(coordinator) {
+                coordinator.init('gradetracker-coordinator-canvas');
+            });
+        {{/js}}
+    {{/hasdata}}
+</div>

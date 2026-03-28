@@ -1,0 +1,486 @@
+{{!
+    @template gradereport_coifish/progress_goals_widgets
+
+    Goal planner, feedback card, and gamification widgets partial.
+
+    Context variables required for this template:
+    * progressdata.hasgoals (bool) - Whether goal thresholds are configured.
+    * progressdata.goals (array) - Array of goal card objects.
+      * label (string) - The goal label (e.g. "Pass", "Merit").
+      * required (string) - Required percentage to reach the goal.
+      * value (string) - Current percentage value.
+      * already_met (bool) - Whether the goal has already been achieved.
+      * achievable (bool) - Whether the goal can still be reached.
+      * message (string) - Descriptive message for the goal card.
+    * selfregwidget (object|false) - Self-regulation tracker widget data.
+      * title (string) - Widget title.
+      * viewsperweek (float) - Grade checks per week.
+      * rating (string) - 'strong', 'moderate', or 'low'.
+      * message (string) - Summary message.
+      * hassparkline (bool) - Whether weekly sparkline data exists.
+      * sparkline (array) - Weekly view counts for sparkline bars.
+    * feedbackwidget (object|false) - Feedback viewing widget data.
+      * title (string) - Widget title.
+      * viewed (int) - Number of feedback items viewed.
+      * total (int) - Total number of feedback items.
+      * allviewed (bool) - Whether all feedback has been viewed.
+      * message (string) - Summary message.
+      * hasitems (bool) - Whether there are individual feedback items to list.
+      * items (array) - Array of feedback item objects.
+        * name (string) - The feedback item name.
+        * url (string) - Link to the feedback item.
+        * viewed (bool) - Whether this item has been viewed.
+    * gamification.ispreview (bool) - Whether this is a teacher preview of hidden widgets.
+    * gamification.nograded (bool) - Whether there are no graded items yet.
+    * gamification.haswidgets (bool) - Whether any gamification widgets are enabled.
+    * gamification.widgets (array) - Array of widget objects (each with a type flag).
+      * isoverall (bool) - Overall percentile widget.
+      * isneighbours (bool) - Nearest neighbours widget.
+      * isimprovement (bool) - Improvement rank widget.
+      * istrend (bool) - Personal trend widget.
+      * isstreak (bool) - Streak tracker widget.
+      * ismilestones (bool) - Milestone badges widget.
+      * title (string) - Widget title.
+
+    Example context (json):
+    {
+        "progressdata": {
+            "hasgoals": true,
+            "goals": [
+                {
+                    "label": "Pass",
+                    "required": "50",
+                    "value": "72",
+                    "already_met": true,
+                    "achievable": true,
+                    "message": "You have already passed."
+                },
+                {
+                    "label": "Distinction",
+                    "required": "85",
+                    "value": "72",
+                    "already_met": false,
+                    "achievable": true,
+                    "message": "You need 85% on remaining items."
+                }
+            ]
+        },
+        "feedbackwidget": false,
+        "gamification": {
+            "ispreview": false,
+            "nograded": false,
+            "haswidgets": false,
+            "widgets": []
+        }
+    }
+}}
+{{! Goal planner — only rendered when thresholds are configured }}
+{{#progressdata.hasgoals}}
+    <div class="gradetracker-goal-planner mt-4">
+        <h5 class="gradetracker-goal-planner-title mb-3">{{#str}}goalplanner, gradereport_coifish{{/str}}</h5>
+        <div class="gradetracker-goal-cards d-flex flex-wrap gap-3">
+            {{#progressdata.goals}}
+                <div class="gradetracker-goal-card {{#already_met}}gradetracker-goal-achieved{{/already_met}} {{^achievable}}{{^already_met}}gradetracker-goal-missed{{/already_met}}{{/achievable}}"
+                     data-required="{{required}}" data-value="{{value}}">
+                    <div class="gradetracker-goal-card-label">{{label}}</div>
+                    <div class="gradetracker-goal-card-value">
+                        {{#already_met}}
+                            <span class="gradetracker-goal-check">&#10003;</span>
+                        {{/already_met}}
+                        {{^already_met}}
+                            {{#achievable}}
+                                <span class="gradetracker-goal-required" data-target="{{required}}">0%</span>
+                            {{/achievable}}
+                            {{^achievable}}
+                                <span class="gradetracker-goal-unavailable">&mdash;</span>
+                            {{/achievable}}
+                        {{/already_met}}
+                    </div>
+                    <div class="gradetracker-goal-card-message">{{message}}</div>
+                </div>
+            {{/progressdata.goals}}
+
+            {{! Feedback card — inline with goal cards }}
+            {{#feedbackwidget}}
+                <div class="gradetracker-goal-card gradetracker-feedback-card {{#allviewed}}gradetracker-goal-achieved{{/allviewed}} {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-goal-card-label">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-goal-card-value">
+                        <span class="gradetracker-completion-ring gradetracker-feedback-ring"
+                              data-graded="{{viewed}}"
+                              data-total="{{total}}">
+                            <svg viewBox="0 0 36 36" class="gradetracker-ring-svg">
+                                <path class="gradetracker-ring-bg"
+                                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <path class="gradetracker-ring-fill"
+                                      stroke-dasharray="0, 100"
+                                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                                <text x="18" y="21" class="gradetracker-ring-text">{{viewed}}/{{total}}</text>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="gradetracker-goal-card-message">{{message}}</div>
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                    {{#hasitems}}
+                        <button type="button" class="btn btn-sm btn-link gradetracker-feedback-details-btn mt-1 p-0"
+                                aria-expanded="false"
+                                aria-controls="gradetracker-feedback-details">
+                            <i class="fa fa-chevron-down me-1" aria-hidden="true"></i>
+                            {{#str}}widget_feedback_details, gradereport_coifish{{/str}}
+                        </button>
+                    {{/hasitems}}
+                </div>
+            {{/feedbackwidget}}
+
+            {{! Self-regulation card — inline with goal cards }}
+            {{#selfregwidget}}
+                <div class="gradetracker-goal-card gradetracker-selfregulation-card {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-goal-card-label">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-goal-card-value">
+                        <span class="gradetracker-selfreg-hero gradetracker-selfregulation-{{rating}}">
+                            {{composite}}<small>%</small>
+                        </span>
+                    </div>
+                    <div class="gradetracker-selfreg-indicators">
+                        <div class="gradetracker-selfreg-indicator" data-bs-toggle="tooltip"
+                             title="{{#str}}selfreg_monitoring, gradereport_coifish{{/str}}: {{monitoringscore}}%">
+                            <div class="gradetracker-selfreg-indicator-bar" style="width: {{monitoringscore}}%"></div>
+                            <span class="gradetracker-selfreg-indicator-label">
+                                <i class="fa fa-line-chart" aria-hidden="true"></i>
+                                {{viewsperweek}}/wk
+                            </span>
+                        </div>
+                        <div class="gradetracker-selfreg-indicator" data-bs-toggle="tooltip"
+                             title="{{#str}}selfreg_feedback, gradereport_coifish{{/str}}: {{feedbackscore}}%">
+                            <div class="gradetracker-selfreg-indicator-bar" style="width: {{feedbackscore}}%"></div>
+                            <span class="gradetracker-selfreg-indicator-label">
+                                <i class="fa fa-comment-o" aria-hidden="true"></i>
+                                {{#str}}selfreg_feedback_short, gradereport_coifish{{/str}}
+                            </span>
+                        </div>
+                        <div class="gradetracker-selfreg-indicator" data-bs-toggle="tooltip"
+                             title="{{#str}}selfreg_resources, gradereport_coifish{{/str}}: {{resourcescore}}%">
+                            <div class="gradetracker-selfreg-indicator-bar" style="width: {{resourcescore}}%"></div>
+                            <span class="gradetracker-selfreg-indicator-label">
+                                <i class="fa fa-book" aria-hidden="true"></i>
+                                {{#str}}selfreg_resources_short, gradereport_coifish{{/str}}
+                            </span>
+                        </div>
+                        <div class="gradetracker-selfreg-indicator" data-bs-toggle="tooltip"
+                             title="{{#str}}selfreg_planning, gradereport_coifish{{/str}}: {{planningscore}}%">
+                            <div class="gradetracker-selfreg-indicator-bar" style="width: {{planningscore}}%"></div>
+                            <span class="gradetracker-selfreg-indicator-label">
+                                <i class="fa fa-calendar-check-o" aria-hidden="true"></i>
+                                {{#str}}selfreg_planning_short, gradereport_coifish{{/str}}
+                            </span>
+                        </div>
+                    </div>
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                    <a href="#" class="gradetracker-selfreg-explain-btn mt-1" data-bs-toggle="modal" data-bs-target="#gradetracker-selfreg-modal">
+                        <i class="fa fa-question-circle me-1" aria-hidden="true"></i>
+                        {{#str}}selfreg_howcalculated, gradereport_coifish{{/str}}
+                    </a>
+                </div>
+
+                {{! Self-regulation explanation modal }}
+                <div class="modal fade" id="gradetracker-selfreg-modal" tabindex="-1" aria-labelledby="gradetracker-selfreg-modal-label" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="gradetracker-selfreg-modal-label">
+                                    <i class="fa fa-dashboard me-2" aria-hidden="true"></i>
+                                    {{#str}}selfreg_modal_title, gradereport_coifish{{/str}}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body gradetracker-selfreg-explain">
+                                <div class="text-center mb-3">
+                                    <span class="gradetracker-selfreg-hero gradetracker-selfregulation-{{rating}} d-inline-block">
+                                        {{composite}}<small>%</small>
+                                    </span>
+                                    <div class="text-muted small mt-1">{{message}}</div>
+                                </div>
+
+                                {{#hassparkline}}
+                                    <div class="mb-3">
+                                        <h6 class="small text-muted text-uppercase mb-2">
+                                            <i class="fa fa-bar-chart me-1" aria-hidden="true"></i>
+                                            {{#str}}selfreg_sparkline_title, gradereport_coifish{{/str}}
+                                        </h6>
+                                        <div class="gradetracker-consistency-timeline gradetracker-selfreg-sparkline" style="height:48px;">
+                                            {{#sparkline}}
+                                                <div class="gradetracker-consistency-bar"
+                                                     style="height: {{height}}%"
+                                                     data-bs-toggle="tooltip"
+                                                     title="{{views}} views">
+                                                </div>
+                                            {{/sparkline}}
+                                        </div>
+                                    </div>
+                                {{/hassparkline}}
+
+                                <p>{{#str}}selfreg_explain_intro, gradereport_coifish{{/str}}</p>
+
+                                <div class="gradetracker-selfreg-explain-card mb-3 p-3 bg-light rounded">
+                                    <h6><i class="fa fa-line-chart me-1" aria-hidden="true"></i> {{#str}}selfreg_monitoring, gradereport_coifish{{/str}}</h6>
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="text-muted small">{{#str}}selfreg_weight, gradereport_coifish{{/str}}: 40%</span>
+                                        <span class="fw-bold">{{monitoringscore}}%</span>
+                                    </div>
+                                    <p class="small mb-0">{{#str}}selfreg_explain_monitoring, gradereport_coifish{{/str}}</p>
+                                </div>
+
+                                <div class="gradetracker-selfreg-explain-card mb-3 p-3 bg-light rounded">
+                                    <h6><i class="fa fa-comment-o me-1" aria-hidden="true"></i> {{#str}}selfreg_feedback, gradereport_coifish{{/str}}</h6>
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="text-muted small">{{#str}}selfreg_weight, gradereport_coifish{{/str}}: 25%</span>
+                                        <span class="fw-bold">{{feedbackscore}}%</span>
+                                    </div>
+                                    <p class="small mb-0">{{#str}}selfreg_explain_feedback, gradereport_coifish{{/str}}</p>
+                                </div>
+
+                                <div class="gradetracker-selfreg-explain-card mb-3 p-3 bg-light rounded">
+                                    <h6><i class="fa fa-book me-1" aria-hidden="true"></i> {{#str}}selfreg_resources, gradereport_coifish{{/str}}</h6>
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="text-muted small">{{#str}}selfreg_weight, gradereport_coifish{{/str}}: 20%</span>
+                                        <span class="fw-bold">{{resourcescore}}%</span>
+                                    </div>
+                                    <p class="small mb-0">{{#str}}selfreg_explain_resources, gradereport_coifish{{/str}}</p>
+                                </div>
+
+                                <div class="gradetracker-selfreg-explain-card mb-3 p-3 bg-light rounded">
+                                    <h6><i class="fa fa-calendar-check-o me-1" aria-hidden="true"></i> {{#str}}selfreg_planning, gradereport_coifish{{/str}}</h6>
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="text-muted small">{{#str}}selfreg_weight, gradereport_coifish{{/str}}: 15%</span>
+                                        <span class="fw-bold">{{planningscore}}%</span>
+                                    </div>
+                                    <p class="small mb-0">{{#str}}selfreg_explain_planning, gradereport_coifish{{/str}}</p>
+                                </div>
+
+                                <div class="alert alert-info small mt-3 mb-0">
+                                    <i class="fa fa-info-circle me-1" aria-hidden="true"></i>
+                                    {{#str}}selfreg_explain_research, gradereport_coifish{{/str}}
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">
+                                    {{#str}}detail_close, gradereport_coifish{{/str}}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {{/selfregwidget}}
+        </div>
+
+        {{! Feedback details panel — below the cards row }}
+        {{#feedbackwidget}}
+            {{#hasitems}}
+                <div id="gradetracker-feedback-details" class="gradetracker-feedback-details d-none mt-3">
+                    <ul class="gradetracker-feedback-checklist list-unstyled mb-0">
+                        {{#items}}
+                            <li class="gradetracker-feedback-item {{#viewed}}gradetracker-feedback-viewed{{/viewed}}">
+                                <i class="fa {{#viewed}}fa-check-square-o text-success{{/viewed}}{{^viewed}}fa-square-o text-muted{{/viewed}} me-2" aria-hidden="true"></i>
+                                {{#url}}<a href="{{url}}" class="gradetracker-feedback-link">{{name}}</a>{{/url}}
+                                {{^url}}{{name}}{{/url}}
+                                {{#viewed}}<span class="badge bg-success ms-auto">{{#str}}widget_feedback_viewed_badge, gradereport_coifish{{/str}}</span>{{/viewed}}
+                                {{^viewed}}<span class="badge bg-warning text-dark ms-auto">{{#str}}widget_feedback_pending_badge, gradereport_coifish{{/str}}</span>{{/viewed}}
+                            </li>
+                        {{/items}}
+                    </ul>
+                </div>
+            {{/hasitems}}
+        {{/feedbackwidget}}
+    </div>
+{{/progressdata.hasgoals}}
+
+{{! Banner when widgets are hidden from students (teacher only) }}
+{{#gamification.ispreview}}
+    <div class="alert alert-warning gradetracker-preview-banner mt-4 d-flex align-items-center">
+        <i class="fa fa-eye-slash me-2" aria-hidden="true"></i>
+        {{#str}}widgets_hidden_banner, gradereport_coifish{{/str}}
+    </div>
+{{/gamification.ispreview}}
+
+{{! Gamification widgets }}
+{{#gamification.nograded}}
+    <div class="gradetracker-widget-unlock alert alert-info mt-4">
+        <i class="fa fa-lock me-2" aria-hidden="true"></i>
+        {{#str}}widget_nograded, gradereport_coifish{{/str}}
+    </div>
+{{/gamification.nograded}}
+
+{{#gamification.haswidgets}}
+    <div class="gradetracker-widgets mt-4 d-flex flex-wrap gap-3">
+
+        {{#gamification.widgets}}
+
+            {{! Overall percentile widget }}
+            {{#isoverall}}
+                <div class="gradetracker-widget gradetracker-widget-overall">
+                    <div class="gradetracker-widget-header">{{title}}</div>
+                    <div class="gradetracker-widget-hero" data-percentile="{{toppercent}}">
+                        {{toppercentlabel}}
+                    </div>
+                    <div class="gradetracker-widget-sub">{{percentage}}%</div>
+                </div>
+            {{/isoverall}}
+
+            {{! Nearest neighbours widget }}
+            {{#isneighbours}}
+                <div class="gradetracker-widget gradetracker-widget-neighbours">
+                    <div class="gradetracker-widget-header">{{title}}</div>
+                    <div class="gradetracker-widget-body">
+                        {{#rows}}
+                            <div class="gradetracker-neighbour-row {{#isyou}}gradetracker-neighbour-you{{/isyou}}">
+                                <span class="gradetracker-neighbour-label">{{label}}</span>
+                                <span class="gradetracker-neighbour-pct">{{percentage}}%</span>
+                            </div>
+                        {{/rows}}
+                    </div>
+                </div>
+            {{/isneighbours}}
+
+            {{! Improvement rank widget }}
+            {{#isimprovement}}
+                <div class="gradetracker-widget gradetracker-widget-improvement">
+                    <div class="gradetracker-widget-header">{{title}}</div>
+                    <div class="gradetracker-widget-hero {{#ispositive}}text-success{{/ispositive}} {{#isnegative}}text-danger{{/isnegative}}">
+                        {{#ispositive}}<i class="fa fa-arrow-up me-1" aria-hidden="true"></i>{{/ispositive}}
+                        {{#isnegative}}<i class="fa fa-arrow-down me-1" aria-hidden="true"></i>{{/isnegative}}
+                        {{deltaabs}} pts
+                    </div>
+                    <div class="gradetracker-widget-sub">{{ranklabel}}</div>
+                </div>
+            {{/isimprovement}}
+
+            {{! Personal trend widget }}
+            {{#istrend}}
+                <div class="gradetracker-widget gradetracker-widget-trend {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-widget-header">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-sparkline-container">
+                        <canvas class="gradetracker-sparkline" data-points="{{sparkjson}}" width="160" height="48"></canvas>
+                    </div>
+                    <div class="gradetracker-widget-sub">
+                        {{#directionlabel}}
+                            <span class="gradetracker-trend-direction gradetracker-trend-{{direction}}">
+                                {{directionlabel}}
+                            </span>
+                        {{/directionlabel}}
+                    </div>
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                </div>
+            {{/istrend}}
+
+            {{! Streak tracker widget }}
+            {{#isstreak}}
+                <div class="gradetracker-widget gradetracker-widget-streak {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-widget-header">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-widget-hero {{#hasstreak}}gradetracker-streak-active{{/hasstreak}}">
+                        {{#hasstreak}}
+                            <span class="gradetracker-streak-flame">&#128293;</span>
+                            <span class="gradetracker-streak-number">{{currentstreak}}</span>
+                        {{/hasstreak}}
+                        {{^hasstreak}}
+                            <span class="gradetracker-streak-number gradetracker-streak-zero">0</span>
+                        {{/hasstreak}}
+                    </div>
+                    <div class="gradetracker-widget-sub">{{streaklabel}}</div>
+                    {{#hasstreak}}
+                        <div class="gradetracker-widget-footnote">{{bestlabel}}</div>
+                    {{/hasstreak}}
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                </div>
+            {{/isstreak}}
+
+            {{! Consistency tracker widget }}
+            {{#isconsistency}}
+                <div class="gradetracker-widget gradetracker-widget-consistency {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-widget-header">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-widget-hero gradetracker-consistency-{{rating}}">
+                        {{score}}%
+                    </div>
+                    {{#hastimeline}}
+                        <div class="gradetracker-consistency-timeline">
+                            {{#timeline}}
+                                <div class="gradetracker-consistency-bar"
+                                     style="height: {{height}}%"
+                                     data-bs-toggle="tooltip"
+                                     title="{{days}} days">
+                                </div>
+                            {{/timeline}}
+                        </div>
+                    {{/hastimeline}}
+                    <div class="gradetracker-widget-sub">{{message}}</div>
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                </div>
+            {{/isconsistency}}
+
+            {{! Early bird widget }}
+            {{#isearlybird}}
+                <div class="gradetracker-widget gradetracker-widget-earlybird {{#isrisk}}gradetracker-widget-risk{{/isrisk}}">
+                    <div class="gradetracker-widget-header">
+                        {{#isrisk}}<i class="fa fa-exclamation-triangle gradetracker-risk-icon me-1" aria-hidden="true"></i>{{/isrisk}}
+                        {{title}}
+                    </div>
+                    <div class="gradetracker-widget-hero gradetracker-earlybird-{{rating}}">
+                        {{#isahead}}<i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{/isahead}}
+                        {{#isbehind}}<i class="fa fa-exclamation-triangle me-1" aria-hidden="true"></i>{{/isbehind}}
+                        {{earlycount}}/{{totalcount}}
+                    </div>
+                    <div class="gradetracker-widget-sub">
+                        {{#avgisearly}}<i class="fa fa-arrow-left me-1 text-success" aria-hidden="true"></i>{{/avgisearly}}
+                        {{^avgisearly}}<i class="fa fa-arrow-right me-1 text-danger" aria-hidden="true"></i>{{/avgisearly}}
+                        {{avglabel}}
+                    </div>
+                    <div class="gradetracker-widget-sub mt-1">{{message}}</div>
+                    {{#hasaction}}
+                        <div class="gradetracker-widget-action">{{action}}</div>
+                    {{/hasaction}}
+                </div>
+            {{/isearlybird}}
+
+            {{! Milestone badges widget }}
+            {{#ismilestones}}
+                <div class="gradetracker-widget gradetracker-widget-milestones gradetracker-widget-wide">
+                    <div class="gradetracker-widget-header">{{title}}
+                        <span class="gradetracker-badge-count">{{earnedcount}}/{{totalcount}}</span>
+                    </div>
+                    <div class="gradetracker-badges-grid">
+                        {{#badges}}
+                            <div class="gradetracker-badge {{#earned}}gradetracker-badge-earned{{/earned}} {{^earned}}gradetracker-badge-locked{{/earned}}"
+                                 data-bs-toggle="tooltip" title="{{label}}">
+                                <i class="fa fa-{{icon}}" aria-hidden="true"></i>
+                            </div>
+                        {{/badges}}
+                    </div>
+                </div>
+            {{/ismilestones}}
+
+        {{/gamification.widgets}}
+    </div>
+{{/gamification.haswidgets}}

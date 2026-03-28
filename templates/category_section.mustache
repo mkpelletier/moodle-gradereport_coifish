@@ -1,0 +1,85 @@
+{{!
+    @template gradereport_coifish/category_section
+
+    Template for a single grade category section with its items.
+
+    Context variables required for this template:
+    * categoryname (string) - The category name.
+    * categoryweight (string) - The category weight as a percentage.
+    * hasweight (bool) - Whether to show the category weight.
+    * hasitems (bool) - Whether the category has direct grade items.
+    * items (array) - Array of grade item data.
+    * hassubcategories (bool) - Whether there are nested subcategories.
+    * subcategories (array) - Array of subcategory data (recursive).
+    * categorytotal (object) - Category total with grade and grademax.
+    * hasrunningtotal (bool) - Whether to show a running total for this category.
+    * runningtotalpercentage (string) - The running total percentage (e.g. "72.5%").
+
+    Example context (json):
+    {
+        "categoryname": "Assignments",
+        "categoryweight": "40.0%",
+        "hasweight": true,
+        "hasitems": true,
+        "items": [],
+        "hassubcategories": false,
+        "subcategories": [],
+        "categorytotal": {
+            "grade": "75.00",
+            "grademax": "100.00"
+        },
+        "hasrunningtotal": true,
+        "runningtotalpercentage": "72.5%"
+    }
+}}
+<div class="gradeoverview-category mb-4">
+    <h4 class="gradeoverview-category-header d-flex align-items-center">
+        {{categoryname}}
+        {{#hasweight}}
+            <span class="badge gradeoverview-weight-badge ms-2">{{categoryweight}}</span>
+        {{/hasweight}}
+    </h4>
+
+    {{#hasitems}}
+        <table class="table table-striped table-sm table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">{{#str}}assessment, gradereport_coifish{{/str}}</th>
+                    <th scope="col">{{#str}}grade, gradereport_coifish{{/str}}</th>
+                    <th scope="col">{{#str}}contribution, gradereport_coifish{{/str}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#items}}
+                    {{> gradereport_coifish/grade_row }}
+                {{/items}}
+                {{^iscoursecategory}}
+                    <tr class="table-active">
+                        <td class="font-weight-bold">
+                            {{categoryname}} {{#str}}coursetotal, gradereport_coifish{{/str}}
+                        </td>
+                        <td class="font-weight-bold">
+                            {{categorytotal.grade}} / {{categorytotal.grademax}}
+                        </td>
+                        <td class="font-weight-bold">
+                            {{#hasrunningtotal}}
+                                <span data-bs-toggle="tooltip"
+                                      title="{{#str}}categoryrunningtotal_help, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-line-chart me-1 text-primary" aria-hidden="true"></i>{{runningtotalpercentage}}
+                                </span>
+                            {{/hasrunningtotal}}
+                        </td>
+                    </tr>
+                {{/iscoursecategory}}
+            </tbody>
+        </table>
+    {{/hasitems}}
+
+    {{#hassubcategories}}
+        <div class="ms-3">
+            {{#subcategories}}
+                {{> gradereport_coifish/category_section }}
+            {{/subcategories}}
+        </div>
+    {{/hassubcategories}}
+</div>

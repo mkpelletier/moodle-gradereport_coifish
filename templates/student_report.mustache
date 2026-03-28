@@ -1,0 +1,169 @@
+{{!
+    @template gradereport_coifish/student_report
+
+    Template for displaying a single student's grade overview.
+
+    Context variables required for this template:
+    * has_grades (bool) - Whether there are grade items to display.
+    * nogradesmessage (string) - Message when no grades exist.
+    * showuser (bool) - Whether to show the student's name (teacher view).
+    * userfullname (string) - The student's full name.
+    * hasweights (bool) - Whether category weights are displayed.
+    * categories (array) - Array of category data.
+    * coursetotal (object) - Course total with grade, grademax, percentage.
+    * showviewtoggle (bool) - Whether to show the table/progress toggle.
+    * defaultprogress (bool) - Whether the progress view is the default.
+    * canviewhidden (bool) - Whether the viewer can toggle hidden items.
+    * showhidden (bool) - Whether hidden items are currently shown.
+
+    Example context (json):
+    {
+        "has_grades": true,
+        "showuser": true,
+        "userfullname": "John Smith",
+        "hasweights": true,
+        "showviewtoggle": true,
+        "defaultprogress": false,
+        "canviewhidden": false,
+        "showhidden": false,
+        "categories": [],
+        "coursetotal": {
+            "grade": "75.00",
+            "grademax": "100.00",
+            "percentage": "75.0%"
+        }
+    }
+}}
+<div class="gradereport-coifish">
+    {{^has_grades}}
+        <div class="alert alert-info mt-3">
+            {{nogradesmessage}}
+        </div>
+    {{/has_grades}}
+
+    {{#has_grades}}
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            {{#showuser}}
+                <h3 class="mb-0">{{userfullname}}</h3>
+            {{/showuser}}
+            {{^showuser}}
+                <div></div>
+            {{/showuser}}
+
+            {{#showviewtoggle}}
+                <div class="btn-group btn-group-sm" role="group"
+                     aria-label="{{#str}}viewtoggle, gradereport_coifish{{/str}}">
+                    <button type="button"
+                            class="btn btn-outline-primary {{^defaultprogress}}{{^defaultinsights}}active{{/defaultinsights}}{{/defaultprogress}}"
+                            id="gradetracker-view-table-btn"
+                            aria-pressed="{{^defaultprogress}}{{^defaultinsights}}true{{/defaultinsights}}{{#defaultinsights}}false{{/defaultinsights}}{{/defaultprogress}}{{#defaultprogress}}false{{/defaultprogress}}">
+                        <i class="fa fa-table" aria-hidden="true"></i>
+                        {{#str}}tableview, gradereport_coifish{{/str}}
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-primary {{#defaultprogress}}active{{/defaultprogress}}"
+                            id="gradetracker-view-progress-btn"
+                            aria-pressed="{{#defaultprogress}}true{{/defaultprogress}}{{^defaultprogress}}false{{/defaultprogress}}">
+                        <i class="fa fa-bar-chart" aria-hidden="true"></i>
+                        {{#str}}progressview, gradereport_coifish{{/str}}
+                    </button>
+                    {{#isteacherview}}
+                        <button type="button"
+                                class="btn btn-outline-primary {{#defaultinsights}}active{{/defaultinsights}}"
+                                id="gradetracker-view-insights-btn"
+                                aria-pressed="{{#defaultinsights}}true{{/defaultinsights}}{{^defaultinsights}}false{{/defaultinsights}}">
+                            <i class="fa fa-stethoscope" aria-hidden="true"></i>
+                            {{#str}}insightsview, gradereport_coifish{{/str}}
+                        </button>
+                    {{/isteacherview}}
+                </div>
+            {{/showviewtoggle}}
+        </div>
+
+        <div class="d-flex flex-wrap gap-3 mb-3">
+            <div class="form-check form-switch">
+                <input type="checkbox"
+                       class="form-check-input"
+                       role="switch"
+                       id="gradetracker-runningtotal"
+                       data-action="gradetracker-toggle"
+                       data-param="runningtotal"
+                       {{#runningtotal}}checked{{/runningtotal}}>
+                <label class="form-check-label" for="gradetracker-runningtotal">
+                    {{#str}}runningtotal, gradereport_coifish{{/str}}
+                    <i class="icon fa fa-question-circle text-muted fa-fw"
+                       data-bs-toggle="tooltip"
+                       title="{{#str}}runningtotal_help, gradereport_coifish{{/str}}"></i>
+                </label>
+            </div>
+            {{#canviewhidden}}
+                <div class="form-check form-switch">
+                    <input type="checkbox"
+                           class="form-check-input"
+                           role="switch"
+                           id="gradetracker-showhidden"
+                           data-action="gradetracker-toggle"
+                           data-param="showhidden"
+                           {{#showhidden}}checked{{/showhidden}}>
+                    <label class="form-check-label" for="gradetracker-showhidden">
+                        {{#str}}showhidden, gradereport_coifish{{/str}}
+                    </label>
+                </div>
+            {{/canviewhidden}}
+        </div>
+
+        {{#js}}
+            require(['gradereport_coifish/toggles'], function(mod) {
+                mod.init();
+            });
+        {{/js}}
+
+        <div id="gradetracker-table-view" {{#defaultprogress}}class="d-none"{{/defaultprogress}} {{#defaultinsights}}class="d-none"{{/defaultinsights}}>
+            {{#categories}}
+                {{> gradereport_coifish/category_section }}
+            {{/categories}}
+
+            <table class="table table-bordered table-sm mt-3 gradeoverview-coursetotal">
+                <tbody>
+                    <tr class="table-primary">
+                        <th scope="row">
+                            {{#str}}coursetotal, gradereport_coifish{{/str}}
+                            <i class="icon fa fa-question-circle fa-fw"
+                               data-bs-toggle="tooltip"
+                               title="{{#str}}coursetotal_help, gradereport_coifish{{/str}}"></i>
+                        </th>
+                        <td class="font-weight-bold">
+                            {{coursetotal.grade}} / {{coursetotal.grademax}}
+                        </td>
+                        <td class="font-weight-bold">
+                            {{coursetotal.percentage}}
+                        </td>
+                    </tr>
+                    {{#runningtotal}}
+                        <tr class="table-success">
+                            <th scope="row" colspan="2">
+                                {{#str}}runningtotal, gradereport_coifish{{/str}}
+                                <i class="icon fa fa-question-circle fa-fw"
+                                   data-bs-toggle="tooltip"
+                                   title="{{#str}}runningtotal_help, gradereport_coifish{{/str}}"></i>
+                            </th>
+                            <td class="font-weight-bold">
+                                {{runningtotaldata.percentage}}
+                            </td>
+                        </tr>
+                    {{/runningtotal}}
+                </tbody>
+            </table>
+        </div>
+
+        {{#showviewtoggle}}
+            {{> gradereport_coifish/progress_view }}
+        {{/showviewtoggle}}
+
+        {{#isteacherview}}
+            <div id="gradetracker-insights-view" {{^defaultinsights}}class="d-none"{{/defaultinsights}}>
+                {{> gradereport_coifish/insights_view }}
+            </div>
+        {{/isteacherview}}
+    {{/has_grades}}
+</div>

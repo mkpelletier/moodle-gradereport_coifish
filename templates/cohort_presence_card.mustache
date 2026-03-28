@@ -1,0 +1,61 @@
+{{!
+    @template gradereport_coifish/cohort_presence_card
+
+    A single COI presence type breakdown card for the cohort insights view.
+
+    Context variables required for this template:
+    * title (string) - Presence type title (e.g. "Social Presence").
+    * bars (array) - Level distribution bars.
+      * level (string) - Level class (none, emerging, developing, established, exemplary).
+      * label (string) - Human-readable level label.
+      * count (int) - Students at this level.
+      * height (int) - Bar height percentage (0-100).
+      * hascount (bool) - Whether count > 0.
+      * percentage (int) - Percentage of cohort.
+    * healthypct (int) - Percentage at developing or above.
+    * ishealthy (bool) - Whether healthypct >= 60.
+    * isconcern (bool) - Whether healthypct < 40.
+
+    Example context (json):
+    {
+        "title": "Social Presence",
+        "bars": [
+            {"level": "none", "label": "Not started", "count": 3, "height": 60, "hascount": true, "percentage": 12}
+        ],
+        "healthypct": 65,
+        "ishealthy": true,
+        "isconcern": false
+    }
+}}
+<div class="gradetracker-presence-card flex-fill">
+    <div class="gradetracker-presence-card-title fw-bold mb-2">{{title}}</div>
+    <div class="gradetracker-presence-bars d-flex gap-1 mb-1">
+        {{#bars}}
+            <div class="gradetracker-presence-bar-group flex-fill">
+                {{#hascount}}
+                    <div class="gradetracker-presence-count">{{count}}</div>
+                    <div class="gradetracker-presence-bar gradetracker-presence-bar-{{level}}"
+                         style="height: {{height}}%;"
+                         data-bs-toggle="tooltip"
+                         title="{{label}}: {{count}} ({{percentage}}%)"></div>
+                {{/hascount}}
+            </div>
+        {{/bars}}
+    </div>
+    <div class="gradetracker-presence-labels d-flex gap-1 mb-2">
+        {{#bars}}
+            <div class="gradetracker-presence-bar-label flex-fill text-center">{{shortlabel}}</div>
+        {{/bars}}
+    </div>
+    <div class="gradetracker-presence-health small">
+        {{#ishealthy}}
+            <span class="text-success"><i class="fa fa-check-circle me-1" aria-hidden="true"></i>{{healthypct}}% {{#str}}cohort_presence_healthy, gradereport_coifish{{/str}}</span>
+        {{/ishealthy}}
+        {{#isconcern}}
+            <span class="text-danger"><i class="fa fa-exclamation-circle me-1" aria-hidden="true"></i>{{healthypct}}% {{#str}}cohort_presence_healthy, gradereport_coifish{{/str}}</span>
+        {{/isconcern}}
+        {{^ishealthy}}{{^isconcern}}
+            <span class="text-muted">{{healthypct}}% {{#str}}cohort_presence_healthy, gradereport_coifish{{/str}}</span>
+        {{/isconcern}}{{/ishealthy}}
+    </div>
+</div>

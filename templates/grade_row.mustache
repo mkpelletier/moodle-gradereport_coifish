@@ -1,0 +1,58 @@
+{{!
+    @template gradereport_coifish/grade_row
+
+    Template for a single grade item row within a category table.
+
+    Context variables required for this template:
+    * itemname (string) - The assessment name.
+    * itemurl (string) - URL to the activity (empty if not a module or not accessible).
+    * hasurl (bool) - Whether the item has a clickable URL.
+    * unavailable (bool) - Whether the activity exists but is not accessible.
+    * weight (string) - The item weight as a percentage (or "Extra credit").
+    * grade (string) - The user's grade (or dash if ungraded, or "Not yet posted" if hidden).
+    * grademax (string) - The maximum grade (empty if hidden).
+    * contribution (string) - The contribution to final grade (or dash, or "Not yet posted").
+    * graded (bool) - Whether the item has been graded.
+    * isextracredit (bool) - Whether this is an extra credit item.
+    * ishidden (bool) - Whether the item is hidden (not yet posted).
+    * islate (bool) - Whether the submission was late.
+    * latetext (string) - Human-readable late duration for tooltip.
+    * hasextension (bool) - Whether an extension was granted (assign only).
+
+    This template is a partial that renders table rows (<tr>).
+    It must be included inside a <table><tbody>...</tbody></table> wrapper.
+    No example context is provided because standalone <tr> elements
+    cannot pass HTML validation outside a table.
+}}
+{{#ishidden}}
+<tr class="text-muted">
+    <td>
+        {{#hasurl}}<a href="{{itemurl}}">{{itemname}}</a>{{/hasurl}}
+        {{^hasurl}}
+            {{#unavailable}}
+                <span title="{{#str}}notavailable, gradereport_coifish{{/str}}">{{itemname}}</span>
+            {{/unavailable}}
+            {{^unavailable}}{{itemname}}{{/unavailable}}
+        {{/hasurl}}
+    </td>
+    <td><em>{{grade}}</em></td>
+    <td><em>{{contribution}}</em></td>
+</tr>
+{{/ishidden}}
+{{^ishidden}}
+<tr{{^graded}} class="text-muted"{{/graded}}{{#isextracredit}} class="table-info"{{/isextracredit}}>
+    <td>
+        {{#hasurl}}<a href="{{itemurl}}">{{itemname}}</a>{{/hasurl}}
+        {{^hasurl}}
+            {{#unavailable}}
+                <span title="{{#str}}notavailable, gradereport_coifish{{/str}}">{{itemname}}</span>
+            {{/unavailable}}
+            {{^unavailable}}{{itemname}}{{/unavailable}}
+        {{/hasurl}}
+        {{#islate}}<span class="badge gradeoverview-late-badge ms-1" title="{{latetext}}">{{#str}}late, gradereport_coifish{{/str}}</span>{{/islate}}
+        {{#hasextension}}<span class="badge gradeoverview-extension-badge ms-1">{{#str}}extension, gradereport_coifish{{/str}}</span>{{/hasextension}}
+    </td>
+    <td>{{grade}} / {{grademax}}</td>
+    <td>{{contribution}}</td>
+</tr>
+{{/ishidden}}
