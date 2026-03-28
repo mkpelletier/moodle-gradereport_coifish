@@ -65,7 +65,11 @@ if ($ADMIN->fulltree) {
         'gradereport_coifish/threshold_pass',
         get_string('threshold_pass', 'gradereport_coifish'),
         get_string('threshold_pass_desc', 'gradereport_coifish'),
-        50, 0, 100, 1, '%'
+        50,
+        0,
+        100,
+        1,
+        '%'
     ));
 
     // Merit threshold (optional — uncheck to disable).
@@ -73,7 +77,12 @@ if ($ADMIN->fulltree) {
         'gradereport_coifish/threshold_merit',
         get_string('threshold_merit', 'gradereport_coifish'),
         get_string('threshold_merit_desc', 'gradereport_coifish'),
-        '', 0, 100, 1, '%', 65
+        '',
+        0,
+        100,
+        1,
+        '%',
+        65
     ));
 
     // Distinction threshold (optional — uncheck to disable).
@@ -81,7 +90,12 @@ if ($ADMIN->fulltree) {
         'gradereport_coifish/threshold_distinction',
         get_string('threshold_distinction', 'gradereport_coifish'),
         get_string('threshold_distinction_desc', 'gradereport_coifish'),
-        '', 0, 100, 1, '%', 75
+        '',
+        0,
+        100,
+        1,
+        '%',
+        75
     ));
 
     // Gamification widgets heading.
@@ -96,7 +110,11 @@ if ($ADMIN->fulltree) {
         'gradereport_coifish/leaderboard_min_enrolment',
         get_string('leaderboard_min_enrolment', 'gradereport_coifish'),
         get_string('leaderboard_min_enrolment_desc', 'gradereport_coifish'),
-        10, 2, 100, 1, ''
+        10,
+        2,
+        100,
+        1,
+        ''
     ));
 
     // Overall percentile widget.
@@ -191,7 +209,11 @@ if ($ADMIN->fulltree) {
         'gradereport_coifish/stale_days',
         get_string('setting_stale_days', 'gradereport_coifish'),
         get_string('setting_stale_days_desc', 'gradereport_coifish'),
-        14, 3, 60, 1, ' days'
+        14,
+        3,
+        60,
+        1,
+        ' days'
     ));
 
     // COI presence level boundaries.

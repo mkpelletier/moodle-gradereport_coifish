@@ -116,7 +116,12 @@ echo $OUTPUT->header();
 // Teacher view: show action bar.
 if ($canviewall) {
     $actionbar = new \gradereport_coifish\output\action_bar(
-        $context, $courseid, $userid, $groupid, $viewparam, $canviewcoordinator
+        $context,
+        $courseid,
+        $userid,
+        $groupid,
+        $viewparam,
+        $canviewcoordinator
     );
     echo $OUTPUT->render_from_template(
         'gradereport_coifish/action_bar',

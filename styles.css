@@ -1203,6 +1203,15 @@
     font-size: 0.8em;
 }
 
+.gradetracker-presence-subtitle {
+    font-size: 0.78em;
+    font-style: italic;
+}
+
+.gradetracker-tp-teacher-panel {
+    border-color: #dee2e6;
+}
+
 /* Grade distribution chart. */
 .gradetracker-distribution-chart {
     height: 140px;
@@ -1261,7 +1270,7 @@
 }
 
 .gradetracker-crossgroup-table .table-active {
-    background-color: rgba(13, 110, 253, 0.06) !important;
+    background-color: rgba(13, 110, 253, 0.06);
 }
 
 .gradetracker-crossgroup-table tfoot td {
@@ -1381,7 +1390,7 @@
     color: #495057;
     white-space: nowrap;
     width: 1%;
-    padding-right: 1rem !important;
+    padding-right: 1rem;
 }
 
 .gradetracker-detail-student-table {

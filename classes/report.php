@@ -2160,7 +2160,7 @@ class report extends \grade_report {
             return null;
         }
 
-        // ── Indicator 1: Progress monitoring (grade report views) ──
+        // Indicator 1: Progress monitoring (grade report views).
         // Weight: 40% — strongest predictor (Macfadyen & Dawson, r=.93).
         $gradeviews = (int)$DB->count_records_sql(
             "SELECT COUNT(l.id)
@@ -2175,7 +2175,7 @@ class report extends \grade_report {
         // Score: 0-100 based on views/week. 2+/wk = 100, 0 = 0.
         $monitoringscore = min(100, round(($gradeviewspw / 2.0) * 100));
 
-        // ── Indicator 2: Feedback utilisation ──
+        // Indicator 2: Feedback utilisation.
         // Weight: 25% — reviewing graded feedback shows reflective behaviour.
         $gradedcount = (int)$DB->count_records_sql(
             "SELECT COUNT(ag.id)
@@ -2199,7 +2199,7 @@ class report extends \grade_report {
         $feedbackrate = $gradedcount > 0 ? round(($feedbackviewed / $gradedcount) * 100) : 0;
         $feedbackscore = min(100, $feedbackrate);
 
-        // ── Indicator 3: Resource revisiting ──
+        // Indicator 3: Resource revisiting.
         // Weight: 20% — returning to materials on multiple days = deeper processing.
         $distinctresourcedays = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT FROM_UNIXTIME(l.timecreated, '%Y-%m-%d'))
@@ -2213,7 +2213,7 @@ class report extends \grade_report {
         // Score: 0-100. 3+ distinct days/week = 100.
         $resourcescore = min(100, round(($resourcedayspw / 3.0) * 100));
 
-        // ── Indicator 4: Planning behaviour (early assignment views) ──
+        // Indicator 4: Planning behaviour (early assignment views).
         // Weight: 15% — viewing assignment before first submission shows goal-setting.
         $assignviewsbeforesubmit = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT a.id)
@@ -2249,7 +2249,7 @@ class report extends \grade_report {
         $planningrate = $totalassignments > 0 ? round(($assignviewsbeforesubmit / $totalassignments) * 100) : 0;
         $planningscore = min(100, $planningrate);
 
-        // ── Composite score ──
+        // Composite score.
         $composite = round(
             $monitoringscore * 0.40 +
             $feedbackscore * 0.25 +
@@ -3483,7 +3483,7 @@ class report extends \grade_report {
         $riskcount = 0;
         $totalindicators = 0;
 
-        // ── Gather student log data for detail modals ──
+        // Gather student log data for detail modals.
         $userid = $this->userid;
         $courseid = $this->courseid;
         $datefmt = get_string('strftimedatetimeshort', 'langconfig');
@@ -3500,7 +3500,8 @@ class report extends \grade_report {
                   OR (l.action = 'created' AND l.target IN ('post', 'discussion')))
            ORDER BY l.timecreated DESC",
             ['userid' => $userid, 'courseid' => $courseid],
-            0, 15
+            0,
+            15
         );
 
         // Course module views by activity type (recent).
@@ -3513,7 +3514,8 @@ class report extends \grade_report {
                 AND l.action = 'viewed' AND l.target = 'course_module'
            ORDER BY l.timecreated DESC",
             ['userid' => $userid, 'courseid' => $courseid],
-            0, 15
+            0,
+            15
         );
 
         // Grade report views (for self-regulation).
@@ -3524,7 +3526,8 @@ class report extends \grade_report {
                 AND l.component LIKE 'gradereport_%' AND l.action = 'viewed'
            ORDER BY l.timecreated DESC",
             ['userid' => $userid, 'courseid' => $courseid],
-            0, 15
+            0,
+            15
         );
 
         // Feedback view events (per assignment).
@@ -3541,7 +3544,8 @@ class report extends \grade_report {
                 'ev1' => '\\mod_assign\\event\\feedback_viewed',
                 'ev2' => '\\mod_assign\\event\\submission_status_viewed',
             ],
-            0, 15
+            0,
+            15
         );
 
         // Submission timestamps with due dates (for timing & consistency).
@@ -3553,25 +3557,26 @@ class report extends \grade_report {
                 AND asub.status = 'submitted' AND asub.latest = 1
            ORDER BY asub.timemodified DESC",
             ['userid' => $userid, 'courseid' => $courseid],
-            0, 15
+            0,
+            15
         );
 
-        // ── Build formatted log data arrays for each card type ──
-        $logcol_date = get_string('logcol_date', $component);
-        $logcol_event = get_string('logcol_event', $component);
-        $logcol_detail = get_string('logcol_detail', $component);
-        $logcol_assessment = get_string('logcol_assessment', $component);
-        $logcol_score = get_string('logcol_score', $component);
-        $logcol_due = get_string('logcol_due', $component);
-        $logcol_submitted = get_string('logcol_submitted', $component);
-        $logcol_offset = get_string('logcol_offset', $component);
-        $logcol_status = get_string('logcol_status', $component);
-        $logcol_component = get_string('logcol_component', $component);
+        // Build formatted log data arrays for each card type.
+        $logcoldate = get_string('logcol_date', $component);
+        $logcolevent = get_string('logcol_event', $component);
+        $logcoldetail = get_string('logcol_detail', $component);
+        $logcolassessment = get_string('logcol_assessment', $component);
+        $logcolscore = get_string('logcol_score', $component);
+        $logcoldue = get_string('logcol_due', $component);
+        $logcolsubmitted = get_string('logcol_submitted', $component);
+        $logcoloffset = get_string('logcol_offset', $component);
+        $logcolstatus = get_string('logcol_status', $component);
+        $logcolcomponent = get_string('logcol_component', $component);
 
         // Trend & Streak: recent graded items.
         $itemscores = $this->get_student_item_scores();
         $trendlogdata = [];
-        $passthreshold_val = $this->get_pass_threshold();
+        $passthresholdval = $this->get_pass_threshold();
         foreach (array_reverse(array_slice($itemscores, -8)) as $item) {
             $trendlogdata[] = [
                 'cells' => [
@@ -3579,7 +3584,7 @@ class report extends \grade_report {
                     $item['name'],
                     $item['percent'] . '%',
                 ],
-                'highlight' => ($item['percent'] < $passthreshold_val),
+                'highlight' => ($item['percent'] < $passthresholdval),
             ];
         }
 
@@ -3609,7 +3614,8 @@ class report extends \grade_report {
               WHERE ag.userid = :userid AND a.course = :courseid AND ag.grade >= 0
            ORDER BY ag.timemodified DESC",
             ['userid' => $userid, 'courseid' => $courseid],
-            0, 15
+            0,
+            15
         );
         // Index feedback view events by assignment.
         $fbviewbyassign = [];
@@ -3690,9 +3696,17 @@ class report extends \grade_report {
 
         // Detail modal helper for student-level cards.
         $studentcardindex = 0;
-        $buildstudentdetail = function(array $metrics, array $thresholds,
-                string $methodologykey, string $rationalekey,
-                array $logcolumns = [], array $logdata = []) use ($component, &$studentcardindex) {
+        $buildstudentdetail = function (
+            array $metrics,
+            array $thresholds,
+            string $methodologykey,
+            string $rationalekey,
+            array $logcolumns = [],
+            array $logdata = []
+        ) use (
+            $component,
+            &$studentcardindex
+        ) {
             $studentcardindex++;
             return [
                 'cardid' => 'scard' . $studentcardindex,
@@ -3731,7 +3745,10 @@ class report extends \grade_report {
                 ];
                 if ($feedbacklow || $coifblow) {
                     $fbpct = $widgets['coi_feedbackloop']['percent'] ?? $widgets['feedback']['percent'] ?? 0;
-                    $trendmetrics[] = ['label' => get_string('detail_student_metric_feedbackpct', $component), 'value' => $fbpct . '%'];
+                    $trendmetrics[] = [
+                        'label' => get_string('detail_student_metric_feedbackpct', $component),
+                        'value' => $fbpct . '%',
+                    ];
                 }
                 $detail = $buildstudentdetail(
                     $trendmetrics,
@@ -3743,7 +3760,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_trend',
                     'detail_student_rationale_trend',
-                    [$logcol_date, $logcol_assessment, $logcol_score],
+                    [$logcoldate, $logcolassessment, $logcolscore],
                     $trendlogdata
                 );
                 $cards[] = array_merge([
@@ -3782,11 +3799,14 @@ class report extends \grade_report {
                     [
                         ['label' => get_string('detail_threshold_trigger', $component),
                          'value' => get_string('detail_student_threshold_streak_trigger', $component)],
-                        ['label' => get_string('detail_threshold_passmark', $component), 'value' => $this->get_pass_threshold() . '%'],
+                        [
+                            'label' => get_string('detail_threshold_passmark', $component),
+                            'value' => $this->get_pass_threshold() . '%',
+                        ],
                     ],
                     'detail_student_method_streak',
                     'detail_student_rationale_streak',
-                    [$logcol_date, $logcol_assessment, $logcol_score],
+                    [$logcoldate, $logcolassessment, $logcolscore],
                     $trendlogdata
                 );
                 $cards[] = array_merge([
@@ -3850,10 +3870,14 @@ class report extends \grade_report {
                     'value' => $widgets['coi_peerconnection']['level']['label'] ?? '–'];
             }
             if ($communitystale || $peerstale) {
-                $isolationmetrics[] = ['label' => get_string('detail_student_metric_daysinactive', $component),
-                    'value' => max($widgets['coi_community']['daysinactive'] ?? 0,
-                                    $widgets['coi_peerconnection']['daysinactive'] ?? 0) . ' ' .
-                               get_string('detail_metric_days', $component)];
+                $maxinactive = max(
+                    $widgets['coi_community']['daysinactive'] ?? 0,
+                    $widgets['coi_peerconnection']['daysinactive'] ?? 0
+                );
+                $isolationmetrics[] = [
+                    'label' => get_string('detail_student_metric_daysinactive', $component),
+                    'value' => $maxinactive . ' ' . get_string('detail_metric_days', $component),
+                ];
             }
             $detail = $buildstudentdetail(
                 $isolationmetrics,
@@ -3867,7 +3891,7 @@ class report extends \grade_report {
                 ],
                 'detail_student_method_isolation',
                 'detail_rationale_isolation',
-                [$logcol_date, $logcol_event, $logcol_detail],
+                [$logcoldate, $logcolevent, $logcoldetail],
                 $isolationlogdata
             );
             $cards[] = array_merge([
@@ -3904,7 +3928,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_feedback',
                     'detail_rationale_feedback',
-                    [$logcol_assessment, $logcol_date, $logcol_status],
+                    [$logcolassessment, $logcoldate, $logcolstatus],
                     $feedbacklogdata
                 );
                 $cards[] = array_merge([
@@ -3938,7 +3962,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_engagement',
                     'detail_rationale_engagement',
-                    [$logcol_date, $logcol_component, $logcol_event],
+                    [$logcoldate, $logcolcomponent, $logcolevent],
                     $engagementlogdata
                 );
                 $cards[] = array_merge([
@@ -3982,7 +4006,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_timing',
                     'detail_student_rationale_timing',
-                    [$logcol_assessment, $logcol_due, $logcol_submitted, $logcol_offset],
+                    [$logcolassessment, $logcoldue, $logcolsubmitted, $logcoloffset],
                     $timinglogdata
                 );
                 $cards[] = array_merge([
@@ -4014,7 +4038,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_consistency',
                     'detail_student_rationale_consistency',
-                    [$logcol_assessment, $logcol_submitted],
+                    [$logcolassessment, $logcolsubmitted],
                     $consistencylogdata
                 );
                 $cards[] = array_merge([
@@ -4057,7 +4081,7 @@ class report extends \grade_report {
                     ],
                     'detail_student_method_selfregulation',
                     'detail_student_rationale_selfregulation',
-                    [$logcol_date, $logcol_component],
+                    [$logcoldate, $logcolcomponent],
                     $selfreglogdata
                 );
                 $cards[] = array_merge([
@@ -4253,7 +4277,7 @@ class report extends \grade_report {
         $usercount = count($userids);
         [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
 
-        // ── 1. Grade distribution ──
+        // 1. Grade distribution.
         $params = array_merge($inparams, ['itemid' => $this->courseitem->id]);
         $grades = $DB->get_records_select(
             'grade_grades',
@@ -4314,7 +4338,9 @@ class report extends \grade_report {
         }
 
         // Class average.
-        $validpcts = array_filter($percentages, fn($p) => $p !== null);
+        $validpcts = array_filter($percentages, function ($p) {
+            return $p !== null;
+        });
         $classaverage = !empty($validpcts) ? round(array_sum($validpcts) / count($validpcts), 1) : null;
         $classmedian = null;
         if (!empty($validpcts)) {
@@ -4325,7 +4351,7 @@ class report extends \grade_report {
                 : $validpcts[$mid];
         }
 
-        // ── 2. COI presence aggregation ──
+        // 2. COI presence aggregation.
         // Social Presence: forum participation rate per student.
         $totaldiscussions = (int)$DB->count_records_sql(
             "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :courseid",
@@ -4338,9 +4364,10 @@ class report extends \grade_report {
                                JOIN {forum_discussions} fd ON fd.id = fp.discussion
                               WHERE fd.course = :courseid AND fp.userid $insql
                            GROUP BY fp.userid";
-        $participations = $DB->get_records_sql($participationsql, array_merge(
-            ['courseid' => $this->courseid], $inparams
-        ));
+        $participations = $DB->get_records_sql(
+            $participationsql,
+            array_merge(['courseid' => $this->courseid], $inparams)
+        );
 
         // Per-user last forum activity.
         $lastpostsql = "SELECT fp.userid, MAX(fp.created) AS lastpost
@@ -4348,9 +4375,10 @@ class report extends \grade_report {
                           JOIN {forum_discussions} fd ON fd.id = fp.discussion
                          WHERE fd.course = :courseid AND fp.userid $insql
                       GROUP BY fp.userid";
-        $lastposts = $DB->get_records_sql($lastpostsql, array_merge(
-            ['courseid' => $this->courseid], $inparams
-        ));
+        $lastposts = $DB->get_records_sql(
+            $lastpostsql,
+            array_merge(['courseid' => $this->courseid], $inparams)
+        );
 
         // Cognitive Presence: engagement rate per student.
         $totalactivities = (int)$DB->count_records_sql(
@@ -4388,7 +4416,9 @@ class report extends \grade_report {
                          GROUP BY sub.userid";
         $engageparams = array_merge(
             ['courseid1' => $this->courseid, 'courseid2' => $this->courseid, 'courseid3' => $this->courseid],
-            $inparams, $inparams2, $inparams3
+            $inparams,
+            $inparams2,
+            $inparams3
         );
         $engagements = $DB->get_records_sql($engagementsql, $engageparams);
 
@@ -4398,23 +4428,83 @@ class report extends \grade_report {
                                JOIN {assign} a ON a.id = ag.assignment
                               WHERE a.course = :courseid AND ag.userid $insql AND ag.grade >= 0
                            GROUP BY ag.userid";
-        $feedbacktotals = $DB->get_records_sql($feedbacktotalsql, array_merge(
-            ['courseid' => $this->courseid], $inparams
-        ));
+        $feedbacktotals = $DB->get_records_sql(
+            $feedbacktotalsql,
+            array_merge(['courseid' => $this->courseid], $inparams)
+        );
 
         $feedbackviewsql = "SELECT l.userid, COUNT(DISTINCT l.contextinstanceid) AS viewed
                               FROM {logstore_standard_log} l
                              WHERE l.userid $insql AND l.courseid = :courseid
                                AND l.eventname IN (:ev1, :ev2)
                           GROUP BY l.userid";
-        $feedbackviews = $DB->get_records_sql($feedbackviewsql, array_merge(
-            $inparams,
-            [
-                'courseid' => $this->courseid,
-                'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-            ]
-        ));
+        $feedbackviews = $DB->get_records_sql(
+            $feedbackviewsql,
+            array_merge(
+                $inparams,
+                [
+                    'courseid' => $this->courseid,
+                    'ev1' => '\\mod_assign\\event\\feedback_viewed',
+                    'ev2' => '\\mod_assign\\event\\submission_status_viewed',
+                ]
+            )
+        );
+
+        // Teaching Presence: instructor-side metrics.
+        // 1. Grading turnaround — average days between submission and grading.
+        $turnaroundsql = "SELECT AVG(ag.timemodified - asub.timemodified) AS avgturnaround,
+                                 COUNT(ag.id) AS graded
+                            FROM {assign_grades} ag
+                            JOIN {assign_submission} asub
+                                 ON asub.assignment = ag.assignment
+                                AND asub.userid = ag.userid
+                                AND asub.latest = 1
+                            JOIN {assign} a ON a.id = ag.assignment
+                           WHERE a.course = :courseid
+                             AND ag.grade >= 0
+                             AND asub.status = 'submitted'
+                             AND ag.timemodified > asub.timemodified";
+        $turnaroundrow = $DB->get_record_sql(
+            $turnaroundsql,
+            ['courseid' => $this->courseid]
+        );
+        $avgturnaroundsecs = $turnaroundrow ? (float)$turnaroundrow->avgturnaround : 0;
+        $avgturnarounddays = $avgturnaroundsecs > 0 ? round($avgturnaroundsecs / DAYSECS, 1) : 0;
+        $totalgraded = $turnaroundrow ? (int)$turnaroundrow->graded : 0;
+
+        // 2. Feedback comments — % of graded items with written comments.
+        $commentcountsql = "SELECT COUNT(fc.id) AS commented
+                              FROM {assignfeedback_comments} fc
+                              JOIN {assign_grades} ag ON ag.id = fc.grade
+                              JOIN {assign} a ON a.id = ag.assignment
+                             WHERE a.course = :courseid
+                               AND ag.grade >= 0
+                               AND fc.commenttext IS NOT NULL
+                               AND fc.commenttext != ''";
+        $commentrow = $DB->get_record_sql(
+            $commentcountsql,
+            ['courseid' => $this->courseid]
+        );
+        $commented = $commentrow ? (int)$commentrow->commented : 0;
+        $commentpct = $totalgraded > 0 ? round(($commented / $totalgraded) * 100) : 0;
+
+        // 3. Ungraded submissions — submitted but awaiting grades.
+        $ungradedsql = "SELECT COUNT(asub.id) AS ungraded
+                          FROM {assign_submission} asub
+                          JOIN {assign} a ON a.id = asub.assignment
+                     LEFT JOIN {assign_grades} ag
+                               ON ag.assignment = asub.assignment
+                              AND ag.userid = asub.userid
+                              AND ag.grade >= 0
+                         WHERE a.course = :courseid
+                           AND asub.status = 'submitted'
+                           AND asub.latest = 1
+                           AND ag.id IS NULL";
+        $ungradedrow = $DB->get_record_sql(
+            $ungradedsql,
+            ['courseid' => $this->courseid]
+        );
+        $ungradedcount = $ungradedrow ? (int)$ungradedrow->ungraded : 0;
 
         // Discussion reading — silent learners (Macfadyen & Dawson, 2012: r=.95).
         // Distinguish students who read discussions but don't post from those who are truly disengaged.
@@ -4426,12 +4516,12 @@ class report extends \grade_report {
                                  AND l.action = 'viewed'
                                  AND l.target = 'discussion'
                             GROUP BY l.userid";
-        $discussionviews = $DB->get_records_sql($discussionviewsql, array_merge(
-            $inparamsdv,
-            ['courseid' => $this->courseid]
-        ));
+        $discussionviews = $DB->get_records_sql(
+            $discussionviewsql,
+            array_merge($inparamsdv, ['courseid' => $this->courseid])
+        );
 
-        // ── 3. Classify each student and build presence summaries ──
+        // 3. Classify each student and build presence summaries.
         $splevels = ['none' => 0, 'emerging' => 0, 'developing' => 0, 'established' => 0, 'exemplary' => 0];
         $cplevels = ['none' => 0, 'emerging' => 0, 'developing' => 0, 'established' => 0, 'exemplary' => 0];
         $tplevels = ['none' => 0, 'emerging' => 0, 'developing' => 0, 'established' => 0, 'exemplary' => 0];
@@ -4584,9 +4674,11 @@ class report extends \grade_report {
         }
 
         // Sort at-risk by risk flag count descending.
-        usort($atrisk, fn($a, $b) => $b['riskflags'] - $a['riskflags']);
+        usort($atrisk, function ($a, $b) {
+            return $b['riskflags'] - $a['riskflags'];
+        });
 
-        // ── 4. Build presence breakdown for template ──
+        // 4. Build presence breakdown for template.
         $presencelevels = ['none', 'emerging', 'developing', 'established', 'exemplary'];
         $presencelabels = [];
         $presenceshort = [];
@@ -4595,7 +4687,15 @@ class report extends \grade_report {
             $presenceshort[$lv] = get_string('coi_level_short_' . $lv, $component);
         }
 
-        $buildpresence = function(array $counts, string $title) use ($usercount, $presencelabels, $presenceshort, $presencelevels) {
+        $buildpresence = function (
+            array $counts,
+            string $title
+        ) use (
+            $usercount,
+            $presencelabels,
+            $presenceshort,
+            $presencelevels
+        ) {
             $maxcount = max(1, max($counts));
             $bars = [];
             foreach ($presencelevels as $lv) {
@@ -4627,11 +4727,73 @@ class report extends \grade_report {
             'teaching' => $buildpresence($tplevels, get_string('cohort_tp_title', $component)),
         ];
 
-        // ── 5. Diagnostic cards ──
+        // Enrich teaching presence with instructor-side metrics.
+        $turnaroundrating = 'good';
+        if ($avgturnarounddays > 7) {
+            $turnaroundrating = 'concern';
+        } else if ($avgturnarounddays > 3) {
+            $turnaroundrating = 'moderate';
+        }
+        $commentrating = 'good';
+        if ($commentpct < 30) {
+            $commentrating = 'concern';
+        } else if ($commentpct < 60) {
+            $commentrating = 'moderate';
+        }
+        $ungradedrating = 'good';
+        if ($ungradedcount > 10) {
+            $ungradedrating = 'concern';
+        } else if ($ungradedcount > 0) {
+            $ungradedrating = 'moderate';
+        }
+        $presence['teaching']['subtitle'] = get_string(
+            'cohort_tp_subtitle',
+            $component
+        );
+        $presence['teaching']['hasteachermetrics'] = true;
+        $presence['teaching']['teachermetrics'] = [
+            [
+                'label' => get_string('cohort_tp_turnaround', $component),
+                'value' => $avgturnarounddays . ' ' . get_string('cohort_tp_days', $component),
+                'rating' => $turnaroundrating,
+                'isgood' => $turnaroundrating === 'good',
+                'ismoderate' => $turnaroundrating === 'moderate',
+                'isconcern' => $turnaroundrating === 'concern',
+                'tooltip' => get_string('cohort_tp_turnaround_tip', $component),
+            ],
+            [
+                'label' => get_string('cohort_tp_comments', $component),
+                'value' => $commentpct . '%',
+                'rating' => $commentrating,
+                'isgood' => $commentrating === 'good',
+                'ismoderate' => $commentrating === 'moderate',
+                'isconcern' => $commentrating === 'concern',
+                'tooltip' => get_string('cohort_tp_comments_tip', $component),
+            ],
+            [
+                'label' => get_string('cohort_tp_ungraded', $component),
+                'value' => (string)$ungradedcount,
+                'rating' => $ungradedrating,
+                'isgood' => $ungradedrating === 'good',
+                'ismoderate' => $ungradedrating === 'moderate',
+                'isconcern' => $ungradedrating === 'concern',
+                'tooltip' => get_string('cohort_tp_ungraded_tip', $component),
+            ],
+        ];
+
+        // 5. Diagnostic cards.
         // Helper: build a detail block for "read more" modals.
         $cardindex = 0;
-        $builddetail = function(array $metrics, array $thresholds, array $students,
-                string $methodologykey, string $rationalekey) use ($component, &$cardindex) {
+        $builddetail = function (
+            array $metrics,
+            array $thresholds,
+            array $students,
+            string $methodologykey,
+            string $rationalekey
+        ) use (
+            $component,
+            &$cardindex
+        ) {
             $cardindex++;
             return [
                 'cardid' => 'card' . $cardindex,
@@ -4655,8 +4817,14 @@ class report extends \grade_report {
             $isolationmetrics = [
                 ['label' => get_string('detail_metric_totaldiscussions', $component), 'value' => (string)$totaldiscussions],
                 ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
-                ['label' => get_string('detail_metric_affected', $component), 'value' => $lowisolation . ' (' . $isolationpct . '%)'],
-                ['label' => get_string('detail_metric_studentheading', $component), 'value' => get_string('detail_metric_sp_studentcol', $component)],
+                [
+                    'label' => get_string('detail_metric_affected', $component),
+                    'value' => $lowisolation . ' (' . $isolationpct . '%)',
+                ],
+                [
+                    'label' => get_string('detail_metric_studentheading', $component),
+                    'value' => get_string('detail_metric_sp_studentcol', $component),
+                ],
             ];
             if ($silentlearners > 0) {
                 $isolationmetrics[] = ['label' => get_string('detail_metric_silentlearners', $component),
@@ -4667,9 +4835,18 @@ class report extends \grade_report {
             $detail = $builddetail(
                 $isolationmetrics,
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_isolation_trigger', $component)],
-                    ['label' => get_string('detail_threshold_levels', $component), 'value' => get_string('detail_threshold_isolation_levels', $component)],
-                    ['label' => get_string('detail_threshold_escalation', $component), 'value' => get_string('detail_threshold_isolation_escalation', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_isolation_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_levels', $component),
+                        'value' => get_string('detail_threshold_isolation_levels', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_escalation', $component),
+                        'value' => get_string('detail_threshold_isolation_escalation', $component),
+                    ],
                 ],
                 $isolatedstudents,
                 'detail_method_isolation',
@@ -4702,13 +4879,28 @@ class report extends \grade_report {
                 [
                     ['label' => get_string('detail_metric_totalactivities', $component), 'value' => (string)$totalactivities],
                     ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
-                    ['label' => get_string('detail_metric_affected', $component), 'value' => $lowengagement . ' (' . $engagementpct . '%)'],
-                    ['label' => get_string('detail_metric_activitytypes', $component), 'value' => get_string('detail_metric_activitylist', $component)],
+                    [
+                        'label' => get_string('detail_metric_affected', $component),
+                        'value' => $lowengagement . ' (' . $engagementpct . '%)',
+                    ],
+                    [
+                        'label' => get_string('detail_metric_activitytypes', $component),
+                        'value' => get_string('detail_metric_activitylist', $component),
+                    ],
                 ],
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_engagement_trigger', $component)],
-                    ['label' => get_string('detail_threshold_levels', $component), 'value' => get_string('detail_threshold_engagement_levels', $component)],
-                    ['label' => get_string('detail_threshold_escalation', $component), 'value' => get_string('detail_threshold_engagement_escalation', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_engagement_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_levels', $component),
+                        'value' => get_string('detail_threshold_engagement_levels', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_escalation', $component),
+                        'value' => get_string('detail_threshold_engagement_escalation', $component),
+                    ],
                 ],
                 $lowengagementstudents,
                 'detail_method_engagement',
@@ -4734,12 +4926,24 @@ class report extends \grade_report {
             $detail = $builddetail(
                 [
                     ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
-                    ['label' => get_string('detail_metric_affected', $component), 'value' => $lowfeedback . ' (' . $feedbackpct . '%)'],
+                    [
+                        'label' => get_string('detail_metric_affected', $component),
+                        'value' => $lowfeedback . ' (' . $feedbackpct . '%)',
+                    ],
                 ],
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_feedback_trigger', $component)],
-                    ['label' => get_string('detail_threshold_levels', $component), 'value' => get_string('detail_threshold_feedback_levels', $component)],
-                    ['label' => get_string('detail_threshold_escalation', $component), 'value' => get_string('detail_threshold_feedback_escalation', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_feedback_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_levels', $component),
+                        'value' => get_string('detail_threshold_feedback_levels', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_escalation', $component),
+                        'value' => get_string('detail_threshold_feedback_escalation', $component),
+                    ],
                 ],
                 $lowfeedbackstudents,
                 'detail_method_feedback',
@@ -4759,7 +4963,10 @@ class report extends \grade_report {
 
         // Stale students.
         $stalecount = count($stale);
-        if ($stalecount >= $triggers['stale_count'] || ($usercount > 0 && ($stalecount / $usercount * 100) >= $triggers['stale_pct'])) {
+        if (
+            $stalecount >= $triggers['stale_count']
+            || ($usercount > 0 && ($stalecount / $usercount * 100) >= $triggers['stale_pct'])
+        ) {
             // Build a short name list for the action (up to 3 names).
             $stalenames = array_column(array_slice($stale, 0, 3), 'fullname');
             $stalenamelist = implode(', ', $stalenames);
@@ -4781,12 +4988,24 @@ class report extends \grade_report {
                 [
                     ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
                     ['label' => get_string('detail_metric_affected', $component), 'value' => (string)$stalecount],
-                    ['label' => get_string('detail_metric_avgdays', $component), 'value' => $avgstaledays . ' ' . get_string('detail_metric_days', $component)],
+                    [
+                        'label' => get_string('detail_metric_avgdays', $component),
+                        'value' => $avgstaledays . ' ' . get_string('detail_metric_days', $component),
+                    ],
                 ],
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_stale_trigger', $component)],
-                    ['label' => get_string('detail_threshold_window', $component), 'value' => get_string('detail_threshold_stale_window', $component)],
-                    ['label' => get_string('detail_threshold_escalation', $component), 'value' => get_string('detail_threshold_stale_escalation', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_stale_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_window', $component),
+                        'value' => get_string('detail_threshold_stale_window', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_escalation', $component),
+                        'value' => get_string('detail_threshold_stale_escalation', $component),
+                    ],
                 ],
                 $stalestudentdetail,
                 'detail_method_stale',
@@ -4818,9 +5037,15 @@ class report extends \grade_report {
                     ['label' => get_string('detail_metric_classmedian', $component), 'value' => ($classmedian ?? 0) . '%'],
                 ],
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_failing_trigger', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_failing_trigger', $component),
+                    ],
                     ['label' => get_string('detail_threshold_passmark', $component), 'value' => $this->get_pass_threshold() . '%'],
-                    ['label' => get_string('detail_threshold_escalation', $component), 'value' => get_string('detail_threshold_failing_escalation', $component)],
+                    [
+                        'label' => get_string('detail_threshold_escalation', $component),
+                        'value' => get_string('detail_threshold_failing_escalation', $component),
+                    ],
                 ],
                 $belowpassstudents,
                 'detail_method_failing',
@@ -4872,9 +5097,18 @@ class report extends \grade_report {
                     ['label' => get_string('detail_metric_affected', $component), 'value' => (string)$isolatedandfailing],
                 ],
                 [
-                    ['label' => get_string('detail_threshold_trigger', $component), 'value' => get_string('detail_threshold_compound_trigger', $component)],
-                    ['label' => get_string('detail_threshold_sp', $component), 'value' => get_string('detail_threshold_compound_sp', $component)],
-                    ['label' => get_string('detail_threshold_grade', $component), 'value' => get_string('detail_threshold_compound_grade', $component)],
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_compound_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_sp', $component),
+                        'value' => get_string('detail_threshold_compound_sp', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_grade', $component),
+                        'value' => get_string('detail_threshold_compound_grade', $component),
+                    ],
                 ],
                 $compoundstudents,
                 'detail_method_compound',
@@ -5023,12 +5257,12 @@ class report extends \grade_report {
             $risklabel = get_string('cohort_risk_high', $component);
         }
 
-        // ── Course design awareness ──
+        // Course design awareness.
         // If COI social presence flags are firing but the course has few or no
         // social activity types, the issue is likely course design, not student behaviour.
         $coursedesign = $this->get_course_design_notice($totaldiscussions, $lowisolation, $usercount, $isolationpct, $triggers);
 
-        // ── Risk quadrant scatter data (S3 model) ──
+        // Risk quadrant scatter data (S3 model).
         // Engagement Index: weighted composite of SP, CP, TP rates.
         // Macfadyen & Dawson (2012): forum participation strongest predictor (r=.95).
         $scatterpoints = [];
@@ -5047,7 +5281,7 @@ class report extends \grade_report {
         }
         $scatterjson = json_encode($scatterpoints);
 
-        // ── Sociogram data (forum reply network) ──
+        // Sociogram data (forum reply network).
         // Build directed edges from forum reply relationships.
         [$insqlsg, $inparamssg] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'sg');
         [$insqlsg2, $inparamssg2] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'sg2');
@@ -5202,7 +5436,7 @@ class report extends \grade_report {
                 $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
                 $rate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
                 $level = $this->get_coi_level($rate, $spthresholds);
-                if ($level['level'] >= 2) { // developing or above.
+                if ($level['level'] >= 2) { // Developing or above.
                     $sphealthy++;
                 }
             }
@@ -5260,8 +5494,12 @@ class report extends \grade_report {
                        AND l.component IN ('mod_page', 'mod_book', 'mod_resource', 'mod_url', 'mod_folder')
                   GROUP BY l.userid
                  ) sub GROUP BY sub.userid",
-                array_merge(['cid1' => $this->courseid, 'cid2' => $this->courseid, 'cid3' => $this->courseid],
-                    $inparams, $inparams2, $inparams3)
+                array_merge(
+                    ['cid1' => $this->courseid, 'cid2' => $this->courseid, 'cid3' => $this->courseid],
+                    $inparams,
+                    $inparams2,
+                    $inparams3
+                )
             );
             $engagerates = [];
             foreach ($uids as $uid) {
@@ -5349,10 +5587,12 @@ class report extends \grade_report {
         }
 
         // Compute course-wide averages for comparison baseline.
-        $allavgs = array_filter(array_column($rows, 'averageraw'), fn($v) => $v !== null);
+        $allavgs = array_filter(array_column($rows, 'averageraw'), function ($v) {
+            return $v !== null;
+        });
         $coursewide = !empty($allavgs) ? round(array_sum($allavgs) / count($allavgs), 1) : null;
 
-        // ── Cross-group diagnostic analytics ──
+        // Cross-group diagnostic analytics.
         // Compare groups to identify significant disparities and generate explanations.
         $diagnostics = [];
         $avgsp = count($rows) > 0 ? round(array_sum(array_column($rows, 'sphealthpct')) / count($rows)) : 0;
@@ -5360,9 +5600,13 @@ class report extends \grade_report {
         $avgfb = count($rows) > 0 ? round(array_sum(array_column($rows, 'fbreviewpct')) / count($rows)) : 0;
 
         // Find best and worst groups by grade average.
-        $graded = array_filter($rows, fn($r) => $r['averageraw'] !== null);
+        $graded = array_filter($rows, function ($r) {
+            return $r['averageraw'] !== null;
+        });
         if (count($graded) >= 2) {
-            usort($graded, fn($a, $b) => ($b['averageraw'] ?? 0) <=> ($a['averageraw'] ?? 0));
+            usort($graded, function ($a, $b) {
+                return ($b['averageraw'] ?? 0) <=> ($a['averageraw'] ?? 0);
+            });
             $best = $graded[0];
             $worst = end($graded);
             $gap = round($best['averageraw'] - $worst['averageraw'], 1);
@@ -5414,7 +5658,9 @@ class report extends \grade_report {
                     $diagnostictext .= ' ' . get_string('crossgroup_diag_no_clear_cause', $component);
                 }
 
-                $actiontext = !empty($actions) ? implode(' ', $actions) : get_string('crossgroup_action_investigate', $component, $worst['groupname']);
+                $actiontext = !empty($actions)
+                    ? implode(' ', $actions)
+                    : get_string('crossgroup_action_investigate', $component, $worst['groupname']);
 
                 $diagnostics[] = [
                     'icon' => 'balance-scale',
@@ -5429,7 +5675,9 @@ class report extends \grade_report {
             foreach ($rows as $r) {
                 $stalepct = $r['studentcount'] > 0 ? round(($r['stalecount'] / $r['studentcount']) * 100) : 0;
                 $avgstalepct = count($rows) > 0
-                    ? round(array_sum(array_map(fn($x) => $x['studentcount'] > 0 ? ($x['stalecount'] / $x['studentcount'] * 100) : 0, $rows)) / count($rows))
+                    ? round(array_sum(array_map(function ($x) {
+                        return $x['studentcount'] > 0 ? ($x['stalecount'] / $x['studentcount'] * 100) : 0;
+                    }, $rows)) / count($rows))
                     : 0;
                 if ($stalepct >= 20 && $stalepct > $avgstalepct + 10) {
                     $diagnostics[] = [
@@ -5658,7 +5906,7 @@ class report extends \grade_report {
         $teacherids = array_keys($teachers);
         [$insql, $inparams] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'tid');
 
-        // ── 1. Insights tab visits (grade report views for this course). ──
+        // 1. Insights tab visits (grade report views for this course).
         $insightsvisits = $DB->get_records_sql(
             "SELECT userid, COUNT(*) AS cnt
                FROM {logstore_standard_log}
@@ -5670,7 +5918,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams)
         );
 
-        // ── 2. Grading turnaround: average time from submission to grade. ──
+        // 2. Grading turnaround: average time from submission to grade.
         [$insql2, $inparams2] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'grd');
         $gradingturnaround = $DB->get_records_sql(
             "SELECT ag.grader AS userid,
@@ -5689,7 +5937,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams2)
         );
 
-        // ── 3. Forum engagement: posts and replies by teachers. ──
+        // 3. Forum engagement: posts and replies by teachers.
         [$insql3, $inparams3] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'frm');
         $forumactivity = $DB->get_records_sql(
             "SELECT fp.userid,
@@ -5704,7 +5952,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams3)
         );
 
-        // ── 4. BigBlueButton sessions (if module is installed). ──
+        // 4. BigBlueButton sessions (if module is installed).
         $bbbdata = [];
         $bbbinstalled = $DB->get_manager()->table_exists('bigbluebuttonbn_logs');
         if ($bbbinstalled) {
@@ -5723,7 +5971,7 @@ class report extends \grade_report {
             );
         }
 
-        // ── 5. Grade monitoring: how often teachers view the gradebook. ──
+        // 5. Grade monitoring: how often teachers view the gradebook.
         [$insql5, $inparams5] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'gvm');
         $grademonitoring = $DB->get_records_sql(
             "SELECT userid, COUNT(*) AS cnt, MAX(timecreated) AS last_view
@@ -5736,7 +5984,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams5)
         );
 
-        // ── 6. Content updates: course module created/updated events. ──
+        // 6. Content updates: course module created/updated events.
         [$insql6, $inparams6] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'upd');
         $contentupdates = $DB->get_records_sql(
             "SELECT userid, COUNT(*) AS cnt, MAX(timecreated) AS last_update
@@ -5749,7 +5997,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams6)
         );
 
-        // ── 7. Messaging responsiveness: messages sent to students. ──
+        // 7. Messaging responsiveness: messages sent to students.
         // Get student user IDs.
         $students = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id');
         $studentids = array_keys($students);
@@ -5774,7 +6022,7 @@ class report extends \grade_report {
             );
         }
 
-        // ── 8. Distinct active days in the course (overall engagement). ──
+        // 8. Distinct active days in the course (overall engagement).
         [$insql8, $inparams8] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'act');
         $activedays = $DB->get_records_sql(
             "SELECT userid, COUNT(DISTINCT FROM_UNIXTIME(timecreated, '%Y-%m-%d')) AS days
@@ -5785,7 +6033,7 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams8)
         );
 
-        // ── Build per-teacher result. ──
+        // Build per-teacher result.
         $teacherresults = [];
         $totalscore = 0;
         foreach ($teachers as $uid => $user) {
@@ -5827,7 +6075,7 @@ class report extends \grade_report {
 
             // Composite engagement score (0-100).
             // Weight: insights 15%, grading speed 20%, forum 15%, BBB 10%,
-            //         grade monitoring 10%, content 10%, messaging 10%, active days 10%.
+            // grade monitoring 10%, content 10%, messaging 10%, active days 10%.
             $insightscore = min(100, round($insightspw / 1.0 * 100)); // 1 visit/week = 100%.
             $gradingscore = $avgturnarounddays !== null
                 ? max(0, min(100, round((7 - $avgturnarounddays) / 7 * 100))) // 0 days = 100%, 7+ = 0%.
@@ -5835,7 +6083,7 @@ class report extends \grade_report {
             $forumscore = min(100, round($forumpostspw / 3.0 * 100)); // 3 posts/week = 100%.
             $bbbscore = $bbbinstalled ? min(100, round($bbbpw / 0.5 * 100)) : 50; // 0.5 sessions/week = 100%.
             $grademonitoringscore = min(100, round($gradeviewspw / 2.0 * 100)); // 2 views/week = 100%.
-            $contentscore = min(100, round($updatecount / max(1, $weeksenrolled) * 10)); // ~10 updates/course = 100%.
+            $contentscore = min(100, round($updatecount / max(1, $weeksenrolled) * 10)); // 10 updates/course = 100%.
             $messagescore = min(100, round($messagespw / 2.0 * 100)); // 2 messages/week = 100%.
             $activescore = min(100, round($dayspw / 4.0 * 100)); // 4 active days/week = 100%.
 
@@ -5918,14 +6166,22 @@ class report extends \grade_report {
         }
 
         // Sort by composite descending.
-        usort($teacherresults, fn($a, $b) => $b['composite'] <=> $a['composite']);
+        usort($teacherresults, function ($a, $b) {
+            return $b['composite'] <=> $a['composite'];
+        });
 
         // Summary stats.
         $teachercount = count($teacherresults);
         $avgscore = $teachercount > 0 ? round($totalscore / $teachercount) : 0;
-        $lowcount = count(array_filter($teacherresults, fn($t) => $t['rating'] === 'low'));
-        $moderatecount = count(array_filter($teacherresults, fn($t) => $t['rating'] === 'moderate'));
-        $highcount = count(array_filter($teacherresults, fn($t) => $t['rating'] === 'high'));
+        $lowcount = count(array_filter($teacherresults, function ($t) {
+            return $t['rating'] === 'low';
+        }));
+        $moderatecount = count(array_filter($teacherresults, function ($t) {
+            return $t['rating'] === 'moderate';
+        }));
+        $highcount = count(array_filter($teacherresults, function ($t) {
+            return $t['rating'] === 'high';
+        }));
 
         // Recommendations.
         $recommendations = [];
@@ -5938,7 +6194,9 @@ class report extends \grade_report {
         }
 
         // Check for teachers not using insights.
-        $noinsights = count(array_filter($teacherresults, fn($t) => $t['insightsvisits'] === 0));
+        $noinsights = count(array_filter($teacherresults, function ($t) {
+            return $t['insightsvisits'] === 0;
+        }));
         if ($noinsights > 0) {
             $recommendations[] = [
                 'severity' => 'warning',
@@ -5948,9 +6206,9 @@ class report extends \grade_report {
         }
 
         // Check for slow grading.
-        $slowgraders = count(array_filter($teacherresults, fn($t) =>
-            $t['avgturnarounddays'] !== null && $t['avgturnarounddays'] > 7
-        ));
+        $slowgraders = count(array_filter($teacherresults, function ($t) {
+            return $t['avgturnarounddays'] !== null && $t['avgturnarounddays'] > 7;
+        }));
         if ($slowgraders > 0) {
             $recommendations[] = [
                 'severity' => 'warning',
@@ -5960,7 +6218,9 @@ class report extends \grade_report {
         }
 
         // Check for stale teachers.
-        $staleteachers = count(array_filter($teacherresults, fn($t) => $t['isstale']));
+        $staleteachers = count(array_filter($teacherresults, function ($t) {
+            return $t['isstale'];
+        }));
         if ($staleteachers > 0) {
             $recommendations[] = [
                 'severity' => 'danger',

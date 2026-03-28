@@ -25,13 +25,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * An optional range slider — checkbox toggles whether the slider value is active.
  */
 class gradereport_coifish_admin_setting_configoptionalslider extends admin_setting {
-
     /** @var int Minimum value. */
     protected int $min;
 
@@ -145,7 +142,15 @@ class gradereport_coifish_admin_setting_configoptionalslider extends admin_setti
 
         $default = $this->get_defaultsetting();
         $defaultinfo = ($default === '') ? get_string('setting_disabled', 'gradereport_coifish') : $default . $this->unit;
-        return format_admin_setting($this, $this->visiblename, $element,
-            $this->description, true, '', $defaultinfo, $query);
+        return format_admin_setting(
+            $this,
+            $this->visiblename,
+            $element,
+            $this->description,
+            true,
+            '',
+            $defaultinfo,
+            $query
+        );
     }
 }

@@ -25,30 +25,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * A four-handle level boundary editor with a visual colour bar.
  */
 class gradereport_coifish_admin_setting_configlevels extends admin_setting {
-
-    /**
-     * Constructor.
-     *
-     * @param string $name Setting name.
-     * @param string $visiblename Localised title.
-     * @param string $description Localised description.
-     * @param string $defaultsetting Default comma-separated values.
-     */
-    public function __construct(
-        string $name,
-        string $visiblename,
-        string $description,
-        string $defaultsetting
-    ) {
-        parent::__construct($name, $visiblename, $description, $defaultsetting);
-    }
-
     /**
      * Read the current value.
      *
@@ -129,7 +109,15 @@ class gradereport_coifish_admin_setting_configlevels extends admin_setting {
 
         $element = $OUTPUT->render_from_template('gradereport_coifish/setting_configlevels', $context);
 
-        return format_admin_setting($this, $this->visiblename, $element,
-            $this->description, true, '', $default, $query);
+        return format_admin_setting(
+            $this,
+            $this->visiblename,
+            $element,
+            $this->description,
+            true,
+            '',
+            $default,
+            $query
+        );
     }
 }

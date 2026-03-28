@@ -58,37 +58,51 @@ define(['core/chartjs-lazy'], function(ChartJS) {
             var datasets = [
                 {
                     label: 'Insights usage',
-                    data: chartData.map(function(t) { return Math.round(t.insight * weights.insight); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.insight * weights.insight);
+                    }),
                     backgroundColor: 'rgba(54, 162, 235, 0.8)',
                 },
                 {
                     label: 'Grading turnaround',
-                    data: chartData.map(function(t) { return Math.round(t.grading * weights.grading); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.grading * weights.grading);
+                    }),
                     backgroundColor: 'rgba(75, 192, 192, 0.8)',
                 },
                 {
                     label: 'Forum activity',
-                    data: chartData.map(function(t) { return Math.round(t.forum * weights.forum); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.forum * weights.forum);
+                    }),
                     backgroundColor: 'rgba(153, 102, 255, 0.8)',
                 },
                 {
                     label: 'Grade monitoring',
-                    data: chartData.map(function(t) { return Math.round(t.monitoring * weights.monitoring); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.monitoring * weights.monitoring);
+                    }),
                     backgroundColor: 'rgba(255, 206, 86, 0.8)',
                 },
                 {
                     label: 'Content updates',
-                    data: chartData.map(function(t) { return Math.round(t.content * weights.content); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.content * weights.content);
+                    }),
                     backgroundColor: 'rgba(255, 159, 64, 0.8)',
                 },
                 {
                     label: 'Messaging',
-                    data: chartData.map(function(t) { return Math.round(t.messaging * weights.messaging); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.messaging * weights.messaging);
+                    }),
                     backgroundColor: 'rgba(255, 99, 132, 0.8)',
                 },
                 {
                     label: 'Active days',
-                    data: chartData.map(function(t) { return Math.round(t.active * weights.active); }),
+                    data: chartData.map(function(t) {
+                        return Math.round(t.active * weights.active);
+                    }),
                     backgroundColor: 'rgba(201, 203, 207, 0.8)',
                 }
             ];

@@ -22,13 +22,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * A range slider admin setting with min, max, step, and a unit suffix.
  */
 class gradereport_coifish_admin_setting_configslider extends admin_setting {
-
     /** @var int Minimum value. */
     protected int $min;
 
@@ -118,7 +115,15 @@ class gradereport_coifish_admin_setting_configslider extends admin_setting {
         $element = $OUTPUT->render_from_template('gradereport_coifish/setting_configslider', $context);
 
         $defaultinfo = $default . $this->unit;
-        return format_admin_setting($this, $this->visiblename, $element,
-            $this->description, true, '', $defaultinfo, $query);
+        return format_admin_setting(
+            $this,
+            $this->visiblename,
+            $element,
+            $this->description,
+            true,
+            '',
+            $defaultinfo,
+            $query
+        );
     }
 }

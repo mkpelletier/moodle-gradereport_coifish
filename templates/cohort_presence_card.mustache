@@ -5,6 +5,7 @@
 
     Context variables required for this template:
     * title (string) - Presence type title (e.g. "Social Presence").
+    * subtitle (string) - Optional subtitle shown below the title.
     * bars (array) - Level distribution bars.
       * level (string) - Level class (none, emerging, developing, established, exemplary).
       * label (string) - Human-readable level label.
@@ -15,6 +16,14 @@
     * healthypct (int) - Percentage at developing or above.
     * ishealthy (bool) - Whether healthypct >= 60.
     * isconcern (bool) - Whether healthypct < 40.
+    * hasteachermetrics (bool) - Whether to show instructor-side metrics panel.
+    * teachermetrics (array) - Instructor responsiveness metrics.
+      * label (string) - Metric label.
+      * value (string) - Metric value.
+      * tooltip (string) - Explanatory tooltip text.
+      * isgood (bool) - Green rating.
+      * ismoderate (bool) - Amber rating.
+      * isconcern (bool) - Red rating.
 
     Example context (json):
     {
@@ -29,6 +38,9 @@
 }}
 <div class="gradetracker-presence-card flex-fill">
     <div class="gradetracker-presence-card-title fw-bold mb-2">{{title}}</div>
+    {{#subtitle}}
+        <div class="gradetracker-presence-subtitle text-muted small mb-2">{{subtitle}}</div>
+    {{/subtitle}}
     <div class="gradetracker-presence-bars d-flex gap-1 mb-1">
         {{#bars}}
             <div class="gradetracker-presence-bar-group flex-fill">
@@ -58,4 +70,26 @@
             <span class="text-muted">{{healthypct}}% {{#str}}cohort_presence_healthy, gradereport_coifish{{/str}}</span>
         {{/isconcern}}{{/ishealthy}}
     </div>
+    {{#hasteachermetrics}}
+        <div class="gradetracker-tp-teacher-panel mt-3 pt-3 border-top">
+            <div class="fw-bold small mb-2">
+                <i class="fa fa-user-circle me-1" aria-hidden="true"></i>
+                {{#str}}cohort_tp_instructor_title, gradereport_coifish{{/str}}
+            </div>
+            {{#teachermetrics}}
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small" data-bs-toggle="tooltip" title="{{tooltip}}">{{label}}</span>
+                    {{#isgood}}
+                        <span class="badge bg-success">{{value}}</span>
+                    {{/isgood}}
+                    {{#ismoderate}}
+                        <span class="badge bg-warning text-dark">{{value}}</span>
+                    {{/ismoderate}}
+                    {{#isconcern}}
+                        <span class="badge bg-danger">{{value}}</span>
+                    {{/isconcern}}
+                </div>
+            {{/teachermetrics}}
+        </div>
+    {{/hasteachermetrics}}
 </div>

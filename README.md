@@ -1,5 +1,7 @@
 # CoIFish
 
+*Swim in your data*
+
 A Moodle grade report plugin that combines learning analytics with the Community of Inquiry (CoI) framework to give students, teachers, and programme coordinators actionable insights into engagement, self-regulation, and academic progress.
 
 ## Features
