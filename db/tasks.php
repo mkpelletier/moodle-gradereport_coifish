@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the Grade Tracker report.
+ * Scheduled task definitions for CoIFish.
  *
  * @package    gradereport_coifish
  * @copyright  2026 South African Theological Seminary (ict@sats.ac.za)
@@ -24,8 +24,14 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'gradereport_coifish';
-$plugin->version   = 2026033100;
-$plugin->release   = '2.2.0';
-$plugin->requires  = 2024110400; // Moodle 5.0+.
-$plugin->maturity  = MATURITY_BETA;
+$tasks = [
+    [
+        'classname' => 'gradereport_coifish\task\calculate_feedback_metrics',
+        'blocking' => 0,
+        'minute' => '0',
+        'hour' => '2',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+    ],
+];

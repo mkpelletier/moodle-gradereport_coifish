@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0] - 2026-03-30
+
+### Added
+- **Feedback quality dimension** — New 9th dimension in the coordinator engagement composite, measuring feedback coverage, depth (word count), qualitative indicators (dialogic, actionable, substantive markers), personalisation (uniqueness), and structured grading (rubric/marking guide usage). Grounded in Hattie & Timperley (2007), Nicol & Macfarlane-Dick (2006), and Boud & Molloy (2013).
+- **Scheduled task** — Daily pre-computation of feedback quality metrics (default 2:00 AM) with database cache table, avoiding expensive text analysis at page load.
+- **Configurable grading turnaround** — Target and maximum day sliders replace the hardcoded 0-day/7-day formula, allowing institutions to set realistic benchmarks.
+- **Content updates toggle** — Disable the content updates dimension when curriculum design is handled by a separate team.
+- **Messaging sources multi-select** — Admins can select which messaging tools to monitor (Moodle core, local_satsmail, etc.). Detected automatically from installed plugins.
+- **Insights tab toggle** — Site-level setting to show or hide the Insights tab on the teacher summary view.
+- **Percentile visibility threshold** — Slider to only show the class standing widget to students in the top N percent (default: top third).
+- **Cross-teacher comparison on coordinator tab** — Moved from the cohort insights view to the coordinator tab where it belongs.
+- **Per-group teacher engagement metrics** — Cross-group comparison now shows the teacher's own forum posts, messages, grading turnaround, and feedback coverage per group.
+- **Engagement correlation diagnostics** — When groups differ in performance, diagnostics now probe whether the teacher's engagement also differs, surfacing correlations between facilitation effort and student outcomes.
+- Prescriptive recommendations for low feedback coverage and generic (copy-pasted) feedback.
+
+### Changed
+- Coordinator composite weights rebalanced for 9 dimensions: grading 15%, feedback quality 15%, forum 13%, insights 12%, monitoring 10%, content 10%, messaging 9%, BBB 8%, active days 8%.
+- Cross-group comparison scoped to the current teacher's groups (falls back to all groups if teacher is not in any).
+- CoI level boundary setting descriptions shortened for slider UI.
+- Unachievable goal thresholds (e.g. distinction) are now hidden entirely instead of showing "no longer possible".
+- Student insights view and CoI widgets centred to match the cohort view layout.
+
 ## [2.1.0] - 2026-03-28
 
 ### Added

@@ -65,32 +65,36 @@ class summary_report implements renderable, templatable {
         $data->users = $summary;
         $data->usercount = count($summary);
 
-        // Cohort-level insights for the teacher.
-        $data->cohortinsights = $this->report->get_cohort_insights_data();
+        // Gate the insights tab behind a site-level toggle.
+        $showinsights = get_config('gradereport_coifish', 'show_insights');
+        $data->showinsights = ($showinsights === false || $showinsights !== '0');
 
-        // Cross-group and cross-teacher comparisons.
-        $data->cohortinsights['crossgroup'] = $this->report->get_cross_group_data();
-        $data->cohortinsights['crossteacher'] = $this->report->get_cross_teacher_data();
+        if ($data->showinsights) {
+            // Cohort-level insights for the teacher.
+            $data->cohortinsights = $this->report->get_cohort_insights_data();
 
-        // Gate scatter and sociogram behind settings toggles.
-        $showscatter = get_config('gradereport_coifish', 'show_riskquadrant');
-        $showsociogram = get_config('gradereport_coifish', 'show_sociogram');
-        if ($showscatter === false || $showscatter) {
-            // Default on — show unless explicitly disabled.
-            $data->cohortinsights['showscatter'] = ($showscatter !== '0')
-                && !empty($data->cohortinsights['hasscatter']);
-        } else {
-            $data->cohortinsights['showscatter'] = !empty($data->cohortinsights['hasscatter']);
+            // Cross-group comparison (scoped to the current teacher's groups).
+            $data->cohortinsights['crossgroup'] = $this->report->get_cross_group_data();
+
+            // Gate scatter and sociogram behind settings toggles.
+            $showscatter = get_config('gradereport_coifish', 'show_riskquadrant');
+            $showsociogram = get_config('gradereport_coifish', 'show_sociogram');
+            if ($showscatter === false || $showscatter) {
+                $data->cohortinsights['showscatter'] = ($showscatter !== '0')
+                    && !empty($data->cohortinsights['hasscatter']);
+            } else {
+                $data->cohortinsights['showscatter'] = !empty($data->cohortinsights['hasscatter']);
+            }
+            if ($showsociogram === false || $showsociogram) {
+                $data->cohortinsights['showsociogram'] = ($showsociogram !== '0')
+                    && !empty($data->cohortinsights['hassociogram']);
+            } else {
+                $data->cohortinsights['showsociogram'] = !empty($data->cohortinsights['hassociogram']);
+            }
+
+            // Preserve the active view across group/user changes.
+            $data->defaultinsights = ($this->viewoverride === 'insights');
         }
-        if ($showsociogram === false || $showsociogram) {
-            $data->cohortinsights['showsociogram'] = ($showsociogram !== '0')
-                && !empty($data->cohortinsights['hassociogram']);
-        } else {
-            $data->cohortinsights['showsociogram'] = !empty($data->cohortinsights['hassociogram']);
-        }
-
-        // Preserve the active view across group/user changes.
-        $data->defaultinsights = ($this->viewoverride === 'insights');
 
         return $data;
     }

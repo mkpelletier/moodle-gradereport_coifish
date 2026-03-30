@@ -456,6 +456,18 @@
                                 <th class="text-center">{{#str}}cohort_stat_belowpass, gradereport_coifish{{/str}}</th>
                                 <th class="text-center">{{#str}}cohort_crossgroup_sphealth, gradereport_coifish{{/str}}</th>
                                 <th class="text-center">{{#str}}cohort_stat_atrisk, gradereport_coifish{{/str}}</th>
+                                <th class="text-center border-start" title="{{#str}}crossgroup_col_forum_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-comments text-muted" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}crossgroup_col_messages_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-envelope text-muted" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}crossgroup_col_turnaround_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-clock-o text-muted" aria-hidden="true"></i>
+                                </th>
+                                <th class="text-center" title="{{#str}}crossgroup_col_fbcoverage_title, gradereport_coifish{{/str}}">
+                                    <i class="fa fa-comment-o text-muted" aria-hidden="true"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -478,6 +490,16 @@
                                         {{^sphealthy}}{{^spconcern}}<span class="text-muted">{{sphealthpct}}%</span>{{/spconcern}}{{/sphealthy}}
                                     </td>
                                     <td class="text-center {{#hasatrisk}}text-danger fw-bold{{/hasatrisk}}">{{atriskcount}}</td>
+                                    <td class="text-center border-start">{{teacherforumposts}}</td>
+                                    <td class="text-center">{{teachermessages}}</td>
+                                    <td class="text-center">
+                                        {{#teacherturnaround}}{{teacherturnaround}}d{{/teacherturnaround}}
+                                        {{^teacherturnaround}}<span class="text-muted">-</span>{{/teacherturnaround}}
+                                    </td>
+                                    <td class="text-center">
+                                        {{#teacherfbcoverage}}{{teacherfbcoverage}}%{{/teacherfbcoverage}}
+                                        {{^teacherfbcoverage}}<span class="text-muted">-</span>{{/teacherfbcoverage}}
+                                    </td>
                                 </tr>
                             {{/groups}}
                         </tbody>
@@ -489,7 +511,7 @@
                                 </td>
                                 <td class="text-center" colspan="1"></td>
                                 <td class="text-center fw-bold">{{courseaverage}}</td>
-                                <td class="text-center" colspan="3"></td>
+                                <td class="text-center" colspan="7"></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -525,47 +547,6 @@
             </div>
         {{/hasgroups}}
         {{/crossgroup}}
-
-        {{! Cross-teacher comparison }}
-        {{#crossteacher}}
-        {{#hasteachers}}
-            <div class="gradetracker-cohort-crossteacher mb-4">
-                <h5 class="gradetracker-cohort-section-title mb-3">
-                    <i class="fa fa-graduation-cap me-1" aria-hidden="true"></i>
-                    {{#str}}cohort_crossteacher_title, gradereport_coifish{{/str}}
-                </h5>
-                <p class="text-muted small mb-2">
-                    {{#str}}cohort_crossteacher_desc, gradereport_coifish{{/str}}
-                </p>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered table-hover gradetracker-crossteacher-table">
-                        <thead class="table-light">
-                            <tr>
-                                <th>{{#str}}cohort_crossteacher_teacher, gradereport_coifish{{/str}}</th>
-                                <th>{{#str}}cohort_crossteacher_groups, gradereport_coifish{{/str}}</th>
-                                <th class="text-center">{{#str}}cohort_stat_students, gradereport_coifish{{/str}}</th>
-                                <th class="text-center">{{#str}}cohort_stat_average, gradereport_coifish{{/str}}</th>
-                                <th class="text-center">{{#str}}cohort_stat_belowpass, gradereport_coifish{{/str}}</th>
-                                <th class="text-center">{{#str}}cohort_stat_atrisk, gradereport_coifish{{/str}}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{#teachers}}
-                                <tr>
-                                    <td class="fw-semibold">{{fullname}}</td>
-                                    <td class="small {{#nogroups}}text-muted{{/nogroups}}">{{grouplist}}</td>
-                                    <td class="text-center">{{studentcount}}</td>
-                                    <td class="text-center">{{average}}</td>
-                                    <td class="text-center {{#belowpass}}text-danger fw-bold{{/belowpass}}">{{belowpass}}</td>
-                                    <td class="text-center {{#hasatrisk}}text-danger fw-bold{{/hasatrisk}}">{{atriskcount}}</td>
-                                </tr>
-                            {{/teachers}}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        {{/hasteachers}}
-        {{/crossteacher}}
 
     </div>
 {{/hasdata}}

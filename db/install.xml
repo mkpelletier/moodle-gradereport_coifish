@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="grade/report/coifish/db" VERSION="2026033000" COMMENT="CoIFish grade report plugin tables">
+  <TABLES>
+    <TABLE NAME="gradereport_coifish_feedback" COMMENT="Cached feedback quality metrics per teacher per course, calculated by scheduled task.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="FK to course.id"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Teacher user ID"/>
+        <FIELD NAME="coverage" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Coverage score 0-100"/>
+        <FIELD NAME="depth" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Depth score 0-100"/>
+        <FIELD NAME="personalisation" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Personalisation score 0-100"/>
+        <FIELD NAME="structured" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Structured grading score 0-100"/>
+        <FIELD NAME="composite" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Combined feedback quality score 0-100"/>
+        <FIELD NAME="totalgraded" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Total graded items"/>
+        <FIELD NAME="withfeedback" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Items with feedback"/>
+        <FIELD NAME="avgwords" TYPE="number" LENGTH="7" DECIMALS="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Average word count"/>
+        <FIELD NAME="uniquepct" TYPE="number" LENGTH="5" DECIMALS="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Unique feedback percentage"/>
+        <FIELD NAME="qualityscore" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Qualitative feedback index 0-100"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseid_userid" UNIQUE="true" FIELDS="courseid, userid" COMMENT="One row per teacher per course"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

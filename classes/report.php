@@ -1043,16 +1043,12 @@ class report extends \grade_report {
         // Goal planner: what does the student need on remaining items for each threshold?
         $goals = $this->calculate_goal_targets($thresholds, $bestpossible);
 
-        // Pre-render goal messages for the template.
-        foreach ($goals as &$goal) {
-            if ($goal['already_met']) {
+        // Pre-render goal messages for the template, hiding unachievable goals.
+        foreach ($goals as $key => &$goal) {
+            if (!$goal['achievable'] && !$goal['already_met']) {
+                unset($goals[$key]);
+            } else if ($goal['already_met']) {
                 $goal['message'] = get_string('goal_achieved', 'gradereport_coifish');
-            } else if (!$goal['achievable']) {
-                $goal['message'] = get_string(
-                    'goal_notpossible',
-                    'gradereport_coifish',
-                    (object)['label' => $goal['label']]
-                );
             } else {
                 $goal['message'] = get_string(
                     'goal_target',
@@ -1062,6 +1058,7 @@ class report extends \grade_report {
             }
         }
         unset($goal);
+        $goals = array_values($goals);
 
         return [
             'categorybars' => $categorybars,
@@ -1596,6 +1593,15 @@ class report extends \grade_report {
         $percentile = round((($total - $rank) / $total) * 100);
         // Show as "Top X%" — cap at 99 to avoid "Top 0%", floor at 1 to avoid "Top 100%".
         $toppercent = max(1, 100 - $percentile);
+
+        // Only show if the student is within the configured top percentile threshold.
+        $threshold = (int)get_config('gradereport_coifish', 'percentile_threshold');
+        if ($threshold <= 0) {
+            $threshold = 33;
+        }
+        if ($toppercent > $threshold) {
+            return null;
+        }
 
         return [
             'type' => 'overall',
@@ -3125,7 +3131,7 @@ class report extends \grade_report {
 
         if ($totalfeedback === 0) {
             $level = $this->get_coi_level(0, $this->get_coi_thresholds('tp', [1, 25, 75, 100]));
-            $action = get_string('widget_coi_feedbackloop_action', 'gradereport_coifish');
+            $action = get_string('widget_coi_feedbackloop_action_none', 'gradereport_coifish');
             return [
                 'type' => 'coi_feedbackloop',
                 'iscoifeedbackloop' => true,
@@ -5366,13 +5372,29 @@ class report extends \grade_report {
      * @return array Cross-group comparison data for template.
      */
     public function get_cross_group_data(): array {
-        global $DB;
+        global $DB, $USER;
 
         $component = 'gradereport_coifish';
         $passthreshold = $this->get_pass_threshold();
         $spthresholds = $this->get_coi_thresholds('sp', [1, 20, 50, 80]);
         $course = get_course($this->courseid);
+
+        // Scope to the current teacher's groups (if they belong to any).
+        $teachergroups = groups_get_user_groups($this->courseid, $USER->id);
+        $teachergroupids = $teachergroups[0] ?? [];
         $allgroups = groups_get_all_groups($this->courseid, 0, $course->defaultgroupingid);
+
+        // If the teacher belongs to specific groups, show only those.
+        // Otherwise fall back to all groups (e.g. editing teachers not in groups).
+        if (!empty($teachergroupids)) {
+            $filteredgroups = [];
+            foreach ($teachergroupids as $gid) {
+                if (isset($allgroups[$gid])) {
+                    $filteredgroups[$gid] = $allgroups[$gid];
+                }
+            }
+            $allgroups = $filteredgroups;
+        }
 
         if (count($allgroups) < 2) {
             return ['hasgroups' => false];
@@ -5561,8 +5583,70 @@ class report extends \grade_report {
 
             $iscurrent = ($group->id == $this->groupid);
 
+            // Per-group teacher engagement metrics for the current user.
+            // Forum posts in this group's discussions.
+            $teacherforumposts = (int)$DB->count_records_sql(
+                "SELECT COUNT(fp.id)
+                   FROM {forum_posts} fp
+                   JOIN {forum_discussions} fd ON fd.id = fp.discussion
+                  WHERE fd.course = :cid AND fd.groupid = :gid AND fp.userid = :tid",
+                ['cid' => $this->courseid, 'gid' => $group->id, 'tid' => $USER->id]
+            );
+
+            // Messages sent to students in this group.
+            [$insqlmsg, $inparamsmsg] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gm');
+            $teachermessages = (int)$DB->count_records_sql(
+                "SELECT COUNT(m.id)
+                   FROM {messages} m
+                  WHERE m.useridfrom = :tid
+                    AND m.conversationid IN (
+                        SELECT mc.id
+                          FROM {message_conversations} mc
+                          JOIN {message_conversation_members} mcm ON mcm.conversationid = mc.id
+                         WHERE mcm.userid $insqlmsg
+                    )",
+                array_merge(['tid' => $USER->id], $inparamsmsg)
+            );
+
+            // Grading turnaround for this group's students.
+            [$insqlgr, $inparamsgr] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gg');
+            $groupturnaround = $DB->get_record_sql(
+                "SELECT AVG(ag.timemodified - asub.timemodified) AS avg_turnaround
+                   FROM {assign_grades} ag
+                   JOIN {assign_submission} asub
+                        ON asub.assignment = ag.assignment AND asub.userid = ag.userid
+                        AND asub.status = 'submitted'
+                   JOIN {assign} a ON a.id = ag.assignment
+                  WHERE a.course = :cid
+                    AND ag.grader = :tid
+                    AND ag.userid $insqlgr
+                    AND ag.grade >= 0
+                    AND ag.timemodified > asub.timemodified",
+                array_merge(['cid' => $this->courseid, 'tid' => $USER->id], $inparamsgr)
+            );
+            $groupturnarounddays = $groupturnaround && $groupturnaround->avg_turnaround > 0
+                ? round($groupturnaround->avg_turnaround / 86400, 1)
+                : null;
+
+            // Feedback coverage for this group's students.
+            [$insqlfb, $inparamsfb] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gfc');
+            $fbcoverage = $DB->get_record_sql(
+                "SELECT COUNT(ag.id) AS total,
+                        SUM(CASE WHEN fc.id IS NOT NULL THEN 1 ELSE 0 END) AS withfb
+                   FROM {assign_grades} ag
+                   JOIN {assign} a ON a.id = ag.assignment
+                   LEFT JOIN {assignfeedback_comments} fc
+                        ON fc.grade = ag.id AND fc.commenttext IS NOT NULL AND fc.commenttext != ''
+                  WHERE a.course = :cid AND ag.grader = :tid AND ag.userid $insqlfb AND ag.grade >= 0",
+                array_merge(['cid' => $this->courseid, 'tid' => $USER->id], $inparamsfb)
+            );
+            $groupfbcoverage = $fbcoverage && $fbcoverage->total > 0
+                ? round(($fbcoverage->withfb / $fbcoverage->total) * 100)
+                : null;
+
             $rows[] = [
                 'groupname' => $group->name,
+                'groupid' => $group->id,
                 'studentcount' => $count,
                 'average' => $avg !== null ? $avg . '%' : '–',
                 'averageraw' => $avg,
@@ -5579,6 +5663,11 @@ class report extends \grade_report {
                 'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                     'id' => $this->courseid, 'group' => $group->id, 'view' => 'insights',
                 ]))->out(false),
+                // Teacher engagement per group.
+                'teacherforumposts' => $teacherforumposts,
+                'teachermessages' => $teachermessages,
+                'teacherturnaround' => $groupturnarounddays,
+                'teacherfbcoverage' => $groupfbcoverage,
             ];
         }
 
@@ -5644,6 +5733,45 @@ class report extends \grade_report {
                         'worst' => $worst['groupname'], 'worstpct' => $worst['fbreviewpct'],
                     ]);
                     $actions[] = get_string('crossgroup_action_fb', $component, $worst['groupname']);
+                }
+
+                // Teacher engagement correlation: compare your own engagement with the worst group.
+                // Forum activity correlation.
+                if ($best['teacherforumposts'] > 0 && $worst['teacherforumposts'] < $best['teacherforumposts'] * 0.5) {
+                    $reasons[] = get_string('crossgroup_diag_teacher_forum', $component, (object)[
+                        'best' => $best['groupname'], 'bestcount' => $best['teacherforumposts'],
+                        'worst' => $worst['groupname'], 'worstcount' => $worst['teacherforumposts'],
+                    ]);
+                    $actions[] = get_string('crossgroup_action_teacher_forum', $component, $worst['groupname']);
+                }
+
+                // Messaging correlation.
+                if ($best['teachermessages'] > 0 && $worst['teachermessages'] < $best['teachermessages'] * 0.5) {
+                    $reasons[] = get_string('crossgroup_diag_teacher_msg', $component, (object)[
+                        'best' => $best['groupname'], 'bestcount' => $best['teachermessages'],
+                        'worst' => $worst['groupname'], 'worstcount' => $worst['teachermessages'],
+                    ]);
+                    $actions[] = get_string('crossgroup_action_teacher_msg', $component, $worst['groupname']);
+                }
+
+                // Grading turnaround correlation.
+                if ($best['teacherturnaround'] !== null && $worst['teacherturnaround'] !== null
+                    && $worst['teacherturnaround'] > $best['teacherturnaround'] + 2) {
+                    $reasons[] = get_string('crossgroup_diag_teacher_grading', $component, (object)[
+                        'best' => $best['groupname'], 'bestdays' => $best['teacherturnaround'],
+                        'worst' => $worst['groupname'], 'worstdays' => $worst['teacherturnaround'],
+                    ]);
+                    $actions[] = get_string('crossgroup_action_teacher_grading', $component, $worst['groupname']);
+                }
+
+                // Feedback coverage correlation.
+                if ($best['teacherfbcoverage'] !== null && $worst['teacherfbcoverage'] !== null
+                    && $best['teacherfbcoverage'] - $worst['teacherfbcoverage'] >= 20) {
+                    $reasons[] = get_string('crossgroup_diag_teacher_fb', $component, (object)[
+                        'best' => $best['groupname'], 'bestpct' => $best['teacherfbcoverage'],
+                        'worst' => $worst['groupname'], 'worstpct' => $worst['teacherfbcoverage'],
+                    ]);
+                    $actions[] = get_string('crossgroup_action_teacher_fb', $component, $worst['groupname']);
                 }
 
                 // Build the diagnostic card.
@@ -5984,42 +6112,44 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams5)
         );
 
-        // 6. Content updates: course module created/updated events.
-        [$insql6, $inparams6] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'upd');
-        $contentupdates = $DB->get_records_sql(
-            "SELECT userid, COUNT(*) AS cnt, MAX(timecreated) AS last_update
-               FROM {logstore_standard_log}
-              WHERE courseid = :courseid
-                AND (action = 'created' OR action = 'updated')
-                AND target = 'course_module'
-                AND userid $insql6
-           GROUP BY userid",
-            array_merge(['courseid' => $this->courseid], $inparams6)
-        );
+        // 6. Content updates: course module created/updated events (if enabled).
+        $contentenabled = get_config('gradereport_coifish', 'coordinator_content_enabled');
+        $contentenabled = ($contentenabled === false || $contentenabled !== '0');
+        $contentupdates = [];
+        if ($contentenabled) {
+            [$insql6, $inparams6] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'upd');
+            $contentupdates = $DB->get_records_sql(
+                "SELECT userid, COUNT(*) AS cnt, MAX(timecreated) AS last_update
+                   FROM {logstore_standard_log}
+                  WHERE courseid = :courseid
+                    AND (action = 'created' OR action = 'updated')
+                    AND target = 'course_module'
+                    AND userid $insql6
+               GROUP BY userid",
+                array_merge(['courseid' => $this->courseid], $inparams6)
+            );
+        }
 
-        // 7. Messaging responsiveness: messages sent to students.
-        // Get student user IDs.
+        // 7. Messaging responsiveness: messages sent to students (from configured sources).
         $students = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id');
         $studentids = array_keys($students);
         $messagessent = [];
-        if (!empty($studentids)) {
-            [$insqlstu, $inparamsstu] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stu');
-            [$insql7, $inparams7] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'msg');
-            $messagessent = $DB->get_records_sql(
-                "SELECT useridfrom AS userid,
-                        COUNT(*) AS cnt,
-                        MAX(timecreated) AS last_message
-                   FROM {messages}
-                  WHERE useridfrom $insql7
-                    AND conversationid IN (
-                        SELECT mc.id
-                          FROM {message_conversations} mc
-                          JOIN {message_conversation_members} mcm ON mcm.conversationid = mc.id
-                         WHERE mcm.userid $insqlstu
-                    )
-               GROUP BY useridfrom",
-                array_merge($inparams7, $inparamsstu)
-            );
+        $selectedsources = $this->get_selected_messaging_sources();
+        if (!empty($studentids) && !empty($selectedsources)) {
+            foreach ($selectedsources as $source) {
+                $sourcecounts = $this->query_messaging_source($source, $teacherids, $studentids);
+                foreach ($sourcecounts as $uid => $row) {
+                    if (isset($messagessent[$uid])) {
+                        $messagessent[$uid]->cnt += $row->cnt;
+                        $messagessent[$uid]->last_message = max(
+                            $messagessent[$uid]->last_message,
+                            $row->last_message
+                        );
+                    } else {
+                        $messagessent[$uid] = $row;
+                    }
+                }
+            }
         }
 
         // 8. Distinct active days in the course (overall engagement).
@@ -6032,6 +6162,21 @@ class report extends \grade_report {
            GROUP BY userid",
             array_merge(['courseid' => $this->courseid], $inparams8)
         );
+
+        // 9. Feedback quality: read pre-computed metrics from cache table.
+        $feedbackenabled = get_config('gradereport_coifish', 'coordinator_feedback_enabled');
+        $feedbackenabled = ($feedbackenabled === false || $feedbackenabled !== '0');
+        $feedbackcache = [];
+        if ($feedbackenabled) {
+            [$insql9, $inparams9] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'fb');
+            $feedbackcache = $DB->get_records_sql(
+                "SELECT userid, coverage, depth, personalisation, structured, composite,
+                        totalgraded, withfeedback, avgwords, uniquepct, timemodified
+                   FROM {gradereport_coifish_feedback}
+                  WHERE courseid = :courseid AND userid $insql9",
+                array_merge(['courseid' => $this->courseid], $inparams9)
+            );
+        }
 
         // Build per-teacher result.
         $teacherresults = [];
@@ -6074,28 +6219,56 @@ class report extends \grade_report {
             $dayspw = round($days / $weeksenrolled, 1);
 
             // Composite engagement score (0-100).
-            // Weight: insights 15%, grading speed 20%, forum 15%, BBB 10%,
-            // grade monitoring 10%, content 10%, messaging 10%, active days 10%.
             $insightscore = min(100, round($insightspw / 1.0 * 100)); // 1 visit/week = 100%.
-            $gradingscore = $avgturnarounddays !== null
-                ? max(0, min(100, round((7 - $avgturnarounddays) / 7 * 100))) // 0 days = 100%, 7+ = 0%.
-                : 50; // No grading data — neutral.
+            $gradingtarget = (int)get_config('gradereport_coifish', 'grading_target_days') ?: 3;
+            $gradingmax = (int)get_config('gradereport_coifish', 'grading_max_days') ?: 7;
+            if ($gradingmax <= $gradingtarget) {
+                $gradingmax = $gradingtarget + 1;
+            }
+            if ($avgturnarounddays !== null) {
+                if ($avgturnarounddays <= $gradingtarget) {
+                    $gradingscore = 100;
+                } else if ($avgturnarounddays >= $gradingmax) {
+                    $gradingscore = 0;
+                } else {
+                    $gradingscore = round(($gradingmax - $avgturnarounddays) / ($gradingmax - $gradingtarget) * 100);
+                }
+            } else {
+                $gradingscore = 50; // No grading data — neutral.
+            }
             $forumscore = min(100, round($forumpostspw / 3.0 * 100)); // 3 posts/week = 100%.
             $bbbscore = $bbbinstalled ? min(100, round($bbbpw / 0.5 * 100)) : 50; // 0.5 sessions/week = 100%.
             $grademonitoringscore = min(100, round($gradeviewspw / 2.0 * 100)); // 2 views/week = 100%.
-            $contentscore = min(100, round($updatecount / max(1, $weeksenrolled) * 10)); // 10 updates/course = 100%.
+            $contentscore = $contentenabled
+                ? min(100, round($updatecount / max(1, $weeksenrolled) * 10)) // 10 updates/course = 100%.
+                : 50; // Neutral when content tracking is disabled.
             $messagescore = min(100, round($messagespw / 2.0 * 100)); // 2 messages/week = 100%.
             $activescore = min(100, round($dayspw / 4.0 * 100)); // 4 active days/week = 100%.
 
+            // Feedback quality from cache (or neutral if disabled/no data).
+            $fbcache = $feedbackcache[$uid] ?? null;
+            $feedbackscore = $feedbackenabled && $fbcache ? (int)$fbcache->composite : 50;
+            $feedbackcoverage = $fbcache->coverage ?? 0;
+            $feedbacktotalgraded = $fbcache->totalgraded ?? 0;
+            $feedbackwithfb = $fbcache->withfeedback ?? 0;
+            $feedbackavgwords = $fbcache->avgwords ?? 0;
+            $feedbackuniquepct = $fbcache->uniquepct ?? 0;
+            $feedbackcoveragepct = $feedbacktotalgraded > 0
+                ? round($feedbackwithfb / $feedbacktotalgraded * 100)
+                : 0;
+
+            // Weighted composite: insights 12%, grading 15%, feedback 15%, forum 13%,
+            // BBB 8%, monitoring 10%, content 10%, messaging 9%, active 8%.
             $composite = round(
-                $insightscore * 0.15 +
-                $gradingscore * 0.20 +
-                $forumscore * 0.15 +
-                $bbbscore * 0.10 +
+                $insightscore * 0.12 +
+                $gradingscore * 0.15 +
+                $feedbackscore * 0.15 +
+                $forumscore * 0.13 +
+                $bbbscore * 0.08 +
                 $grademonitoringscore * 0.10 +
                 $contentscore * 0.10 +
-                $messagescore * 0.10 +
-                $activescore * 0.10
+                $messagescore * 0.09 +
+                $activescore * 0.08
             );
 
             $totalscore += $composite;
@@ -6146,6 +6319,14 @@ class report extends \grade_report {
                 'gradeviews' => $gradeviews,
                 'gradeviewspw' => $gradeviewspw,
                 'grademonitoringscore' => $grademonitoringscore,
+
+                'feedbackscore' => $feedbackscore,
+                'feedbackcoverage' => $feedbackcoverage,
+                'feedbackcoveragepct' => $feedbackcoveragepct,
+                'feedbacktotalgraded' => $feedbacktotalgraded,
+                'feedbackwithfb' => $feedbackwithfb,
+                'feedbackavgwords' => $feedbackavgwords,
+                'feedbackuniqueness' => $feedbackuniquepct,
 
                 'contentupdates' => $updatecount,
                 'contentscore' => $contentscore,
@@ -6229,10 +6410,38 @@ class report extends \grade_report {
             ];
         }
 
+        // Check for low feedback coverage.
+        if ($feedbackenabled) {
+            $lowfeedback = count(array_filter($teacherresults, function ($t) {
+                return $t['feedbackcoveragepct'] < 30 && $t['feedbacktotalgraded'] > 0;
+            }));
+            if ($lowfeedback > 0) {
+                $recommendations[] = [
+                    'severity' => 'warning',
+                    'icon' => 'comment-o',
+                    'text' => get_string('coord_rec_low_feedback', 'gradereport_coifish', $lowfeedback),
+                ];
+            }
+
+            // Check for generic/copy-pasted feedback.
+            $genericfeedback = count(array_filter($teacherresults, function ($t) {
+                return $t['feedbackuniqueness'] < 30 && $t['feedbacktotalgraded'] > 0;
+            }));
+            if ($genericfeedback > 0) {
+                $recommendations[] = [
+                    'severity' => 'warning',
+                    'icon' => 'clone',
+                    'text' => get_string('coord_rec_generic_feedback', 'gradereport_coifish', $genericfeedback),
+                ];
+            }
+        }
+
         return [
             'teachers' => $teacherresults,
             'hasteachers' => !empty($teacherresults),
             'hasbbb' => $bbbinstalled,
+            'hascontent' => $contentenabled,
+            'hasfeedback' => $feedbackenabled,
             'summary' => [
                 'teachercount' => $teachercount,
                 'avgscore' => $avgscore,
@@ -6244,5 +6453,91 @@ class report extends \grade_report {
             'recommendations' => $recommendations,
             'hasrecommendations' => !empty($recommendations),
         ];
+    }
+
+    /**
+     * Get the list of messaging sources selected by the admin.
+     *
+     * @return array List of source keys (e.g. ['core', 'local_satsmail']).
+     */
+    protected function get_selected_messaging_sources(): array {
+        $config = get_config('gradereport_coifish', 'coordinator_messaging_sources');
+        if ($config === false || $config === '') {
+            return ['core'];
+        }
+        $sources = [];
+        foreach (explode(',', $config) as $source) {
+            $source = trim($source);
+            if ($source !== '') {
+                $sources[] = $source;
+            }
+        }
+        return $sources ?: ['core'];
+    }
+
+    /**
+     * Query a specific messaging source for teacher-to-student message counts.
+     *
+     * @param string $source The source key (e.g. 'core', 'local_satsmail').
+     * @param array $teacherids Teacher user IDs.
+     * @param array $studentids Student user IDs.
+     * @return array Keyed by userid with ->cnt and ->last_message properties.
+     */
+    protected function query_messaging_source(string $source, array $teacherids, array $studentids): array {
+        global $DB;
+
+        if ($source === 'core') {
+            return $this->query_core_messaging($teacherids, $studentids);
+        }
+
+        // For local plugins, query logstore for message-sent events from that component.
+        [$insqlteach, $inparamsteach] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'mst');
+        [$insqlstu, $inparamsstu] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'mss');
+        return $DB->get_records_sql(
+            "SELECT userid,
+                    COUNT(*) AS cnt,
+                    MAX(timecreated) AS last_message
+               FROM {logstore_standard_log}
+              WHERE component = :component
+                AND (action = 'sent' OR action = 'created')
+                AND target LIKE '%message%'
+                AND userid $insqlteach
+                AND relateduserid $insqlstu
+           GROUP BY userid",
+            array_merge(
+                ['component' => $source],
+                $inparamsteach,
+                $inparamsstu
+            )
+        );
+    }
+
+    /**
+     * Query Moodle core messaging for teacher-to-student message counts.
+     *
+     * @param array $teacherids Teacher user IDs.
+     * @param array $studentids Student user IDs.
+     * @return array Keyed by userid with ->cnt and ->last_message properties.
+     */
+    protected function query_core_messaging(array $teacherids, array $studentids): array {
+        global $DB;
+
+        [$insqlstu, $inparamsstu] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'stu');
+        [$insqlteach, $inparamsteach] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'msg');
+        return $DB->get_records_sql(
+            "SELECT useridfrom AS userid,
+                    COUNT(*) AS cnt,
+                    MAX(timecreated) AS last_message
+               FROM {messages}
+              WHERE useridfrom $insqlteach
+                AND conversationid IN (
+                    SELECT mc.id
+                      FROM {message_conversations} mc
+                      JOIN {message_conversation_members} mcm ON mcm.conversationid = mc.id
+                     WHERE mcm.userid $insqlstu
+                )
+           GROUP BY useridfrom",
+            array_merge($inparamsteach, $inparamsstu)
+        );
     }
 }

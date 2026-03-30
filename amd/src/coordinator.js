@@ -45,14 +45,18 @@ define(['core/chartjs-lazy'], function(ChartJS) {
             });
 
             // Each component gets a weighted slice — show the weighted contribution, not the raw score.
+            var hasContent = chartData.length > 0 && chartData[0].content !== undefined;
+            var hasFeedback = chartData.length > 0 && chartData[0].feedback !== undefined;
+
             var weights = {
-                insight: 0.15,
-                grading: 0.20,
-                forum: 0.15,
+                insight: 0.12,
+                grading: 0.15,
+                feedback: 0.15,
+                forum: 0.13,
                 monitoring: 0.10,
                 content: 0.10,
-                messaging: 0.10,
-                active: 0.10
+                messaging: 0.09,
+                active: 0.08
             };
 
             var datasets = [
@@ -69,7 +73,20 @@ define(['core/chartjs-lazy'], function(ChartJS) {
                         return Math.round(t.grading * weights.grading);
                     }),
                     backgroundColor: 'rgba(75, 192, 192, 0.8)',
-                },
+                }
+            ];
+
+            if (hasFeedback) {
+                datasets.push({
+                    label: 'Feedback quality',
+                    data: chartData.map(function(t) {
+                        return Math.round((t.feedback || 0) * weights.feedback);
+                    }),
+                    backgroundColor: 'rgba(0, 168, 120, 0.8)',
+                });
+            }
+
+            datasets.push(
                 {
                     label: 'Forum activity',
                     data: chartData.map(function(t) {
@@ -83,14 +100,20 @@ define(['core/chartjs-lazy'], function(ChartJS) {
                         return Math.round(t.monitoring * weights.monitoring);
                     }),
                     backgroundColor: 'rgba(255, 206, 86, 0.8)',
-                },
-                {
+                }
+            );
+
+            if (hasContent) {
+                datasets.push({
                     label: 'Content updates',
                     data: chartData.map(function(t) {
                         return Math.round(t.content * weights.content);
                     }),
                     backgroundColor: 'rgba(255, 159, 64, 0.8)',
-                },
+                });
+            }
+
+            datasets.push(
                 {
                     label: 'Messaging',
                     data: chartData.map(function(t) {
@@ -105,7 +128,7 @@ define(['core/chartjs-lazy'], function(ChartJS) {
                     }),
                     backgroundColor: 'rgba(201, 203, 207, 0.8)',
                 }
-            ];
+            );
 
             // Set canvas height based on number of teachers.
             var barHeight = 40;

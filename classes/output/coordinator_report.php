@@ -59,6 +59,8 @@ class coordinator_report implements renderable, templatable {
 
         $data->hasdata = $coorddata['hasteachers'];
         $data->hasbbb = $coorddata['hasbbb'] ?? false;
+        $data->hascontent = $coorddata['hascontent'] ?? true;
+        $data->hasfeedback = $coorddata['hasfeedback'] ?? true;
         $data->teachers = $coorddata['teachers'] ?? [];
         $data->summary = $coorddata['summary'] ?? [];
         $data->recommendations = $coorddata['recommendations'] ?? [];
@@ -68,20 +70,29 @@ class coordinator_report implements renderable, templatable {
         if ($data->hasdata) {
             $chartdata = [];
             foreach ($coorddata['teachers'] as $t) {
-                $chartdata[] = [
+                $entry = [
                     'name' => $t['fullname'],
                     'composite' => $t['composite'],
                     'insight' => $t['insightscore'],
                     'grading' => $t['gradingscore'],
                     'forum' => $t['forumscore'],
                     'monitoring' => $t['grademonitoringscore'],
-                    'content' => $t['contentscore'],
                     'messaging' => $t['messagescore'],
                     'active' => $t['activescore'],
                 ];
+                if ($data->hasfeedback) {
+                    $entry['feedback'] = $t['feedbackscore'];
+                }
+                if ($data->hascontent) {
+                    $entry['content'] = $t['contentscore'];
+                }
+                $chartdata[] = $entry;
             }
             $data->chartjson = json_encode($chartdata);
         }
+
+        // Cross-teacher comparison (student outcomes by teacher).
+        $data->crossteacher = $this->report->get_cross_teacher_data();
 
         return $data;
     }

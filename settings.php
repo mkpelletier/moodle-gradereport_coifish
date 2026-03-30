@@ -125,6 +125,18 @@ if ($ADMIN->fulltree) {
         0
     ));
 
+    // Percentile visibility threshold.
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/percentile_threshold',
+        get_string('setting_percentile_threshold', 'gradereport_coifish'),
+        get_string('setting_percentile_threshold_desc', 'gradereport_coifish'),
+        33,
+        1,
+        100,
+        1,
+        '%'
+    ));
+
     // Nearest neighbour widget.
     $settings->add(new admin_setting_configcheckbox(
         'gradereport_coifish/widget_neighbours',
@@ -265,6 +277,14 @@ if ($ADMIN->fulltree) {
         get_string('visualisations_desc', 'gradereport_coifish')
     ));
 
+    // Insights tab.
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/show_insights',
+        get_string('setting_insights', 'gradereport_coifish'),
+        get_string('setting_insights_desc', 'gradereport_coifish'),
+        1
+    ));
+
     // S3 risk quadrant scatter graph.
     $settings->add(new admin_setting_configcheckbox(
         'gradereport_coifish/show_riskquadrant',
@@ -333,5 +353,62 @@ if ($ADMIN->fulltree) {
         get_string('coordinator_enabled', 'gradereport_coifish'),
         get_string('coordinator_enabled_desc', 'gradereport_coifish'),
         0
+    ));
+
+    // Grading turnaround target (days).
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/grading_target_days',
+        get_string('setting_grading_target', 'gradereport_coifish'),
+        get_string('setting_grading_target_desc', 'gradereport_coifish'),
+        3,
+        1,
+        14,
+        1,
+        ' days'
+    ));
+
+    // Grading turnaround maximum (days).
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/grading_max_days',
+        get_string('setting_grading_max', 'gradereport_coifish'),
+        get_string('setting_grading_max_desc', 'gradereport_coifish'),
+        7,
+        2,
+        30,
+        1,
+        ' days'
+    ));
+
+    // Feedback quality dimension toggle.
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/coordinator_feedback_enabled',
+        get_string('setting_coord_feedback_enabled', 'gradereport_coifish'),
+        get_string('setting_coord_feedback_enabled_desc', 'gradereport_coifish'),
+        1
+    ));
+
+    // Content updates dimension toggle.
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/coordinator_content_enabled',
+        get_string('setting_coord_content_enabled', 'gradereport_coifish'),
+        get_string('setting_coord_content_enabled_desc', 'gradereport_coifish'),
+        1
+    ));
+
+    // Messaging sources multi-select.
+    $messagingsources = ['core' => get_string('setting_msgsource_core', 'gradereport_coifish')];
+    // Detect installed local plugins with mail/message in their name.
+    $localplugins = core_plugin_manager::instance()->get_installed_plugins('local');
+    foreach ($localplugins as $pluginname => $version) {
+        if (preg_match('/mail|message/i', $pluginname)) {
+            $messagingsources['local_' . $pluginname] = get_string('pluginname', 'local_' . $pluginname);
+        }
+    }
+    $settings->add(new admin_setting_configmulticheckbox(
+        'gradereport_coifish/coordinator_messaging_sources',
+        get_string('setting_messaging_sources', 'gradereport_coifish'),
+        get_string('setting_messaging_sources_desc', 'gradereport_coifish'),
+        ['core' => 1],
+        $messagingsources
     ));
 }

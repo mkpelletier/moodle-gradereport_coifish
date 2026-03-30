@@ -42,6 +42,7 @@
     {{/hasusers}}
 
     {{#hasusers}}
+        {{#showinsights}}
         <div class="d-flex justify-content-between align-items-center mb-3 mt-3">
             <div></div>
             <div class="btn-group btn-group-sm" role="group"
@@ -62,14 +63,17 @@
                 </button>
             </div>
         </div>
+        {{/showinsights}}
 
+        {{#showinsights}}
         {{#js}}
             require(['gradereport_coifish/toggles'], function(mod) {
                 mod.initSummary();
             });
         {{/js}}
+        {{/showinsights}}
 
-        <div id="gradetracker-summary-table-view" {{#defaultinsights}}class="d-none"{{/defaultinsights}}>
+        <div id="gradetracker-summary-table-view" {{#showinsights}}{{#defaultinsights}}class="d-none"{{/defaultinsights}}{{/showinsights}}>
             <table class="table table-striped table-hover table-sm table-bordered">
                 <thead class="table-light">
                     <tr>
@@ -95,6 +99,7 @@
             </p>
         </div>
 
+        {{#showinsights}}
         <div id="gradetracker-summary-insights-view" {{^defaultinsights}}class="d-none"{{/defaultinsights}}>
             {{> gradereport_coifish/cohort_insights_view }}
         </div>
@@ -127,5 +132,6 @@
                 }
             );
         {{/js}}
+        {{/showinsights}}
     {{/hasusers}}
 </div>
