@@ -1,0 +1,93 @@
+{{!
+    @template gradereport_coifish/intervention_modal
+
+    Modal for logging teacher interventions triggered by diagnostic cards.
+
+    Context variables required for this template:
+    * courseid (int) - The course ID.
+
+    Example context (json):
+    {
+        "courseid": 36
+    }
+}}
+<div class="modal fade" id="gradetracker-intervention-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fa fa-clipboard me-1" aria-hidden="true"></i>
+                    {{#str}}intervention_modal_title, gradereport_coifish{{/str}}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="intv-courseid" value="{{courseid}}">
+                <input type="hidden" id="intv-diagnostictype" value="">
+                <input type="hidden" id="intv-scope" value="">
+
+                {{! Diagnostic context (pre-filled) }}
+                <div class="mb-3">
+                    <label class="form-label fw-bold">
+                        {{#str}}intervention_modal_diagnostic, gradereport_coifish{{/str}}
+                    </label>
+                    <div id="intv-diagnostic-context" class="form-control-plaintext text-muted small"></div>
+                </div>
+
+                {{! Student selection }}
+                <div class="mb-3">
+                    <label class="form-label fw-bold">
+                        {{#str}}intervention_modal_students, gradereport_coifish{{/str}}
+                    </label>
+                    <div id="intv-students-container"></div>
+                </div>
+
+                {{! Action taken }}
+                <div class="mb-3">
+                    <label class="form-label fw-bold" for="intv-actiontype">
+                        {{#str}}intervention_modal_action, gradereport_coifish{{/str}}
+                    </label>
+                    <select class="form-select" id="intv-actiontype">
+                        <option value="">{{#str}}intervention_modal_action_select, gradereport_coifish{{/str}}</option>
+                        <option value="message_student" data-scope="individual">{{#str}}intervention_action_message_student, gradereport_coifish{{/str}}</option>
+                        <option value="message_group" data-scope="both">{{#str}}intervention_action_message_group, gradereport_coifish{{/str}}</option>
+                        <option value="meeting_scheduled" data-scope="individual">{{#str}}intervention_action_meeting_scheduled, gradereport_coifish{{/str}}</option>
+                        <option value="peer_pairing" data-scope="individual">{{#str}}intervention_action_peer_pairing, gradereport_coifish{{/str}}</option>
+                        <option value="discussion_prompt" data-scope="both">{{#str}}intervention_action_discussion_prompt, gradereport_coifish{{/str}}</option>
+                        <option value="additional_resources" data-scope="both">{{#str}}intervention_action_additional_resources, gradereport_coifish{{/str}}</option>
+                        <option value="feedback_reminder" data-scope="both">{{#str}}intervention_action_feedback_reminder, gradereport_coifish{{/str}}</option>
+                        <option value="deadline_adjustment" data-scope="both">{{#str}}intervention_action_deadline_adjustment, gradereport_coifish{{/str}}</option>
+                        <option value="activity_restructure" data-scope="cohort">{{#str}}intervention_action_activity_restructure, gradereport_coifish{{/str}}</option>
+                        <option value="study_plan" data-scope="individual">{{#str}}intervention_action_study_plan, gradereport_coifish{{/str}}</option>
+                        <option value="referral" data-scope="individual">{{#str}}intervention_action_referral, gradereport_coifish{{/str}}</option>
+                        <option value="custom" data-scope="both">{{#str}}intervention_action_custom, gradereport_coifish{{/str}}</option>
+                    </select>
+                </div>
+
+                {{! Custom action text (shown when "Other" is selected) }}
+                <div class="mb-3 d-none" id="intv-custom-container">
+                    <input type="text" class="form-control" id="intv-customaction"
+                           placeholder="Describe the action taken...">
+                </div>
+
+                {{! Notes }}
+                <div class="mb-3">
+                    <label class="form-label fw-bold" for="intv-notes">
+                        {{#str}}intervention_modal_notes, gradereport_coifish{{/str}}
+                    </label>
+                    <textarea class="form-control" id="intv-notes" rows="2"
+                              placeholder="{{#str}}intervention_modal_notes_placeholder, gradereport_coifish{{/str}}"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {{#str}}cancel{{/str}}
+                </button>
+                <button type="button" class="btn btn-primary" id="intv-submit-btn">
+                    <i class="fa fa-check me-1" aria-hidden="true"></i>
+                    {{#str}}intervention_modal_submit, gradereport_coifish{{/str}}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -411,4 +411,34 @@ if ($ADMIN->fulltree) {
         ['core' => 1],
         $messagingsources
     ));
+
+    // Intervention tracking heading.
+    $settings->add(new admin_setting_heading(
+        'gradereport_coifish/interventionheading',
+        get_string('intervention_heading', 'gradereport_coifish'),
+        get_string('intervention_heading_desc', 'gradereport_coifish')
+    ));
+
+    // Enable intervention tracking.
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/intervention_enabled',
+        get_string('setting_intervention_enabled', 'gradereport_coifish'),
+        get_string('setting_intervention_enabled_desc', 'gradereport_coifish'),
+        1
+    ));
+
+    // Follow-up check schedule.
+    $settings->add(new admin_setting_configmulticheckbox(
+        'gradereport_coifish/intervention_followup_days',
+        get_string('setting_intervention_followup', 'gradereport_coifish'),
+        get_string('setting_intervention_followup_desc', 'gradereport_coifish'),
+        ['7' => 1, '14' => 1, '28' => 1],
+        [
+            '7' => get_string('setting_followup_7', 'gradereport_coifish'),
+            '14' => get_string('setting_followup_14', 'gradereport_coifish'),
+            '28' => get_string('setting_followup_28', 'gradereport_coifish'),
+            '60' => get_string('setting_followup_60', 'gradereport_coifish'),
+            '90' => get_string('setting_followup_90', 'gradereport_coifish'),
+        ]
+    ));
 }

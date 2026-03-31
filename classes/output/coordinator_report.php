@@ -94,6 +94,13 @@ class coordinator_report implements renderable, templatable {
         // Cross-teacher comparison (student outcomes by teacher).
         $data->crossteacher = $this->report->get_cross_teacher_data();
 
+        // Intervention analytics.
+        $interventionenabled = get_config('gradereport_coifish', 'intervention_enabled');
+        $data->hasinterventions = ($interventionenabled === false || $interventionenabled !== '0');
+        if ($data->hasinterventions) {
+            $data->interventions = $this->report->get_coordinator_intervention_data();
+        }
+
         return $data;
     }
 }

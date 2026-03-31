@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.4.0] - 2026-03-31
+
+### Added
+- **Intervention tracking system** — Teachers can record interventions directly from diagnostic insight cards, closing the analytics loop identified in LAK research (Clow, 2012; Wise, 2014).
+  - Low-friction "Log intervention" button on every student-level and cohort-level diagnostic card.
+  - Pre-populated modal with diagnostic context, student selection (checkboxes for cohort interventions), preset action types, and optional notes.
+  - Context-sensitive action options: individual interventions offer personal messaging, meetings, peer pairing, study plans, and referrals; cohort interventions offer group messaging, discussion prompts, activity restructuring, and resource provision.
+  - Metric snapshots captured server-side at intervention time (grade, engagement, social presence, feedback review, days inactive).
+  - AJAX submission via Moodle external function with capability check (`gradereport/coifish:intervene`).
+- **Intervention outcome evaluation** — Scheduled task (daily at 2:30 AM) compares current student metrics to intervention snapshots at configurable follow-up intervals (7, 14, 28, 60, 90 days).
+  - Outcome classification (improved, stable, declined) weighted by the diagnostic type that triggered the intervention.
+  - Follow-up schedule configured via multi-checkbox setting (no comma-separated values).
+- **Intervention history timeline** — Visible on the student insights tab showing past interventions with date, teacher, action, outcome badge, and snapshot-vs-current metric comparison.
+- **Coordinator intervention analytics** — New section on the coordinator tab with summary cards (total interventions, improved/stable/declined percentages), effectiveness by diagnostic type, and an escalation list for students with 3+ interventions and no improvement.
+- **Insights tab course-level override** — Admins can enable or disable the Insights tab per course, overriding the site-level default.
+- New capability `gradereport/coifish:intervene` for teachers and managers.
+- Three new database tables for intervention records, per-student snapshots, and follow-up outcomes.
+
+### Fixed
+- Feedback loop widget showing raw lang key when no graded assignments exist.
+- Student insights view not respecting the site-level Insights tab toggle.
+- Course-level insights override not saving due to `PARAM_ALPHA` stripping numeric values.
+
 ## [2.2.0] - 2026-03-30
 
 ### Added

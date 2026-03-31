@@ -18,13 +18,18 @@ A Moodle grade report plugin that combines learning analytics with the Community
 ### Teacher View
 - **Summary dashboard** — Overview of all students with course totals, drill-down, and group filtering.
 - **Cohort insights** — Diagnostic and prescriptive analytics cards identifying at-risk students with transparent methodology modals.
+- **Intervention tracking** — Record interventions directly from diagnostic cards with context-sensitive action options, then track whether they yield results over time via automated follow-up checks.
+- **Cross-group comparison** — Compare student outcomes and your own engagement metrics across your groups, with correlation diagnostics.
 - **S3 risk quadrant** — Scatter plot of engagement vs. grade based on the Student Success System model.
 - **Forum sociogram** — Force-directed graph of student reply networks coloured by academic performance.
 - **Grade distribution** — Histogram with threshold markers.
 
 ### Coordinator View
-- **Teacher engagement analytics** — Composite engagement score for each facilitator across eight dimensions: insights usage, grading turnaround, forum activity, live sessions (BigBlueButton), grade monitoring, content updates, messaging, and active days.
-- **Prescriptive recommendations** — Automated alerts for low engagement, unused analytics tools, slow grading, and inactive facilitators.
+- **Teacher engagement analytics** — Composite engagement score for each facilitator across nine dimensions: grading turnaround, feedback quality, insights usage, forum activity, live sessions (BigBlueButton), grade monitoring, content updates, messaging, and active days.
+- **Feedback quality dimension** — Measures coverage, depth, qualitative indicators (dialogic, actionable, substantive), personalisation, and structured grading usage, computed daily by a scheduled task.
+- **Intervention analytics** — Aggregated intervention data across teachers including intervention rates, effectiveness by diagnostic type, and an escalation list for students who are not improving.
+- **Cross-teacher comparison** — Student outcomes aggregated by teacher with group assignments.
+- **Prescriptive recommendations** — Automated alerts for low engagement, unused analytics tools, slow grading, inactive facilitators, low feedback coverage, and generic feedback.
 - **Engagement breakdown chart** — Stacked bar chart showing weighted contribution of each engagement dimension per teacher.
 - **Transparent methodology** — Full documentation of indicators, weights, and benchmarks.
 
@@ -52,6 +57,12 @@ CoIFish draws on established learning analytics research and pedagogical framewo
 
 ### Feedback and Assessment
 - Hattie, J., & Timperley, H. (2007). The power of feedback. *Review of Educational Research*, 77(1), 81–112.
+- Nicol, D. J., & Macfarlane-Dick, D. (2006). Formative assessment and self-regulated learning: A model and seven principles of good feedback practice. *Studies in Higher Education*, 31(2), 199–218.
+- Boud, D., & Molloy, E. (2013). Rethinking models of feedback for learning: The challenge of design. *Assessment & Evaluation in Higher Education*, 38(6), 698–712.
+
+### Closing the Analytics Loop
+- Clow, D. (2012). The learning analytics cycle: Closing the loop effectively. *Proceedings of the 2nd International Conference on Learning Analytics and Knowledge*, 134–138.
+- Wise, A. F. (2014). Designing pedagogical interventions to support student use of learning analytics. *Proceedings of the 4th International Conference on Learning Analytics and Knowledge*, 203–211.
 
 ### Student Persistence and Community
 - Rovai, A. P. (2002). Building sense of community at a distance. *International Review of Research in Open and Distance Learning*, 3(1), 1–16.

@@ -3472,6 +3472,10 @@ class report extends \grade_report {
         $component = 'gradereport_coifish';
         $cards = [];
 
+        // Student name for intervention buttons.
+        $studentuser = $DB->get_record('user', ['id' => $this->userid], 'id, firstname, lastname');
+        $studentname = $studentuser ? fullname($studentuser) : '';
+
         // Collect all widget data for cross-referencing.
         $gamification = $this->get_gamification_data(true);
         $coi = $this->get_coi_data(true);
@@ -3711,11 +3715,15 @@ class report extends \grade_report {
             array $logdata = []
         ) use (
             $component,
+            $studentname,
             &$studentcardindex
         ) {
             $studentcardindex++;
             return [
                 'cardid' => 'scard' . $studentcardindex,
+                'courseid' => $this->courseid,
+                'studentid' => $this->userid,
+                'studentname' => $studentname,
                 'metrics' => $metrics,
                 'hasmetrics' => !empty($metrics),
                 'thresholds' => $thresholds,
@@ -3771,6 +3779,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'line-chart',
+                    'diagnostictype' => 'trend_declining',
                     'severity' => 'danger',
                     'title' => get_string('insight_trend_title', $component),
                     'diagnostic' => $diagnostic,
@@ -3817,6 +3826,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'fire-extinguisher',
+                    'diagnostictype' => 'streak_broken',
                     'severity' => 'warning',
                     'title' => get_string('insight_streak_title', $component),
                     'diagnostic' => $diagnostic,
@@ -3902,6 +3912,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'user-times',
+                'diagnostictype' => 'social_isolation',
                 'severity' => ($communitylow && $peerlow) ? 'danger' : 'warning',
                 'title' => get_string('insight_isolation_title', $component),
                 'diagnostic' => $diagnostic,
@@ -3939,6 +3950,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'comment-o',
+                    'diagnostictype' => 'feedback_unreviewed',
                     'severity' => ($feedbackwidget['percent'] ?? 0) === 0 ? 'danger' : 'warning',
                     'title' => get_string('insight_feedback_title', $component),
                     'diagnostic' => get_string('insight_feedback_diagnostic', $component, $unreviewed),
@@ -3973,6 +3985,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'book',
+                    'diagnostictype' => 'engagement_low',
                     'severity' => ($engagement['level']['level'] ?? 0) === 0 ? 'danger' : 'warning',
                     'title' => get_string('insight_engagement_title', $component),
                     'diagnostic' => get_string('insight_engagement_diagnostic', $component),
@@ -4017,6 +4030,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'clock-o',
+                    'diagnostictype' => 'timing_late',
                     'severity' => ($earlybird['rating'] ?? '') === 'behind' ? 'danger' : 'warning',
                     'title' => get_string('insight_timing_title', $component),
                     'diagnostic' => $diagnostic,
@@ -4049,6 +4063,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'calendar',
+                    'diagnostictype' => 'consistency_poor',
                     'severity' => 'warning',
                     'title' => get_string('insight_consistency_title', $component),
                     'diagnostic' => get_string('insight_consistency_diagnostic', $component),
@@ -4092,6 +4107,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'dashboard',
+                    'diagnostictype' => 'selfregulation_low',
                     'severity' => 'warning',
                     'title' => get_string('insight_selfregulation_title', $component),
                     'diagnostic' => get_string('insight_selfregulation_diagnostic', $component, $selfregcomposite),
@@ -4572,6 +4588,7 @@ class report extends \grade_report {
                     $flags[] = get_string('cohort_flag_sp', $component);
                 }
                 $isolatedstudents[] = [
+                    'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $threads . ' / ' . $totaldiscussions . ' (' . $sprate . '%)'
                         . ($issilent ? ' · ' . get_string('cohort_silent_label', $component, $dvcount) : ''),
@@ -4608,6 +4625,7 @@ class report extends \grade_report {
                 $lowengagement++;
                 $flags[] = get_string('cohort_flag_cp', $component);
                 $lowengagementstudents[] = [
+                    'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $engaged . ' / ' . $totalactivities . ' (' . $cprate . '%)',
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
@@ -4627,6 +4645,7 @@ class report extends \grade_report {
                 $lowfeedback++;
                 $flags[] = get_string('cohort_flag_tp', $component);
                 $lowfeedbackstudents[] = [
+                    'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $fbviewed . ' / ' . $fbtotal . ' (' . $fbrate . '%)',
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
@@ -4642,6 +4661,7 @@ class report extends \grade_report {
                 $riskflags++;
                 $flags[] = get_string('cohort_flag_failing', $component);
                 $belowpassstudents[] = [
+                    'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $pct . '%',
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
@@ -4801,14 +4821,23 @@ class report extends \grade_report {
             &$cardindex
         ) {
             $cardindex++;
+            // Build JSON for intervention modal student selection.
+            $sjson = [];
+            foreach ($students as $s) {
+                if (!empty($s['userid'])) {
+                    $sjson[] = ['id' => (int)$s['userid'], 'name' => $s['fullname'] ?? ''];
+                }
+            }
             return [
                 'cardid' => 'card' . $cardindex,
+                'courseid' => $this->courseid,
                 'metrics' => $metrics,
                 'hasmetrics' => !empty($metrics),
                 'thresholds' => $thresholds,
                 'hasthresholds' => !empty($thresholds),
                 'students' => $students,
                 'hasstudents' => !empty($students),
+                'studentsjson' => htmlspecialchars(json_encode($sjson), ENT_QUOTES, 'UTF-8'),
                 'methodology' => get_string($methodologykey, $component),
                 'rationale' => get_string($rationalekey, $component),
             ];
@@ -4869,6 +4898,7 @@ class report extends \grade_report {
             }
             $cards[] = array_merge([
                 'icon' => 'users',
+                'diagnostictype' => 'cohort_isolation',
                 'severity' => $isolationpct >= 50 ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_isolation_title', $component),
                 'diagnostic' => $isolationdiag,
@@ -4914,6 +4944,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'book',
+                'diagnostictype' => 'cohort_engagement',
                 'severity' => $engagementpct >= 50 ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_engagement_title', $component),
                 'diagnostic' => get_string('cohort_card_engagement_diagnostic', $component, (object)[
@@ -4957,6 +4988,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'comment-o',
+                'diagnostictype' => 'cohort_feedback',
                 'severity' => $feedbackpct >= 50 ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_feedback_title', $component),
                 'diagnostic' => get_string('cohort_card_feedback_diagnostic', $component, (object)[
@@ -4985,6 +5017,7 @@ class report extends \grade_report {
             $stalestudentdetail = [];
             foreach ($stale as $s) {
                 $stalestudentdetail[] = [
+                    'userid' => $s['userid'],
                     'fullname' => $s['fullname'],
                     'metric' => $s['days'] . ' ' . get_string('detail_metric_daysinactive', $component),
                     'viewurl' => $s['viewurl'],
@@ -5019,6 +5052,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'clock-o',
+                'diagnostictype' => 'cohort_stale',
                 'severity' => $stalecount / max(1, $usercount) >= 0.3 ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_stale_title', $component),
                 'diagnostic' => get_string('cohort_card_stale_diagnostic', $component, (object)[
@@ -5059,6 +5093,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'exclamation-triangle',
+                'diagnostictype' => 'cohort_failing',
                 'severity' => $failpct >= 40 ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_failing_title', $component),
                 'diagnostic' => get_string('cohort_card_failing_diagnostic', $component, (object)[
@@ -5084,6 +5119,7 @@ class report extends \grade_report {
                     $compoundnames[] = fullname($enrolledusers[$uid]);
                 }
                 $compoundstudents[] = [
+                    'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $pct . '% · ' . $threads . '/' . $totaldiscussions . ' threads',
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
@@ -5122,6 +5158,7 @@ class report extends \grade_report {
             );
             $cards[] = array_merge([
                 'icon' => 'chain-broken',
+                'diagnostictype' => 'cohort_compound',
                 'severity' => 'danger',
                 'title' => get_string('cohort_card_compound_title', $component),
                 'diagnostic' => get_string('cohort_card_compound_diagnostic', $component, (object)[
@@ -5207,6 +5244,7 @@ class report extends \grade_report {
                 );
                 $cards[] = array_merge([
                     'icon' => 'pie-chart',
+                    'diagnostictype' => 'cohort_balance',
                     'severity' => 'warning',
                     'title' => get_string('cohort_card_balance_title', $component),
                     'diagnostic' => get_string('cohort_card_balance_diagnostic', $component, (object)[
@@ -5755,8 +5793,10 @@ class report extends \grade_report {
                 }
 
                 // Grading turnaround correlation.
-                if ($best['teacherturnaround'] !== null && $worst['teacherturnaround'] !== null
-                    && $worst['teacherturnaround'] > $best['teacherturnaround'] + 2) {
+                if (
+                    $best['teacherturnaround'] !== null && $worst['teacherturnaround'] !== null
+                    && $worst['teacherturnaround'] > $best['teacherturnaround'] + 2
+                ) {
                     $reasons[] = get_string('crossgroup_diag_teacher_grading', $component, (object)[
                         'best' => $best['groupname'], 'bestdays' => $best['teacherturnaround'],
                         'worst' => $worst['groupname'], 'worstdays' => $worst['teacherturnaround'],
@@ -5765,8 +5805,10 @@ class report extends \grade_report {
                 }
 
                 // Feedback coverage correlation.
-                if ($best['teacherfbcoverage'] !== null && $worst['teacherfbcoverage'] !== null
-                    && $best['teacherfbcoverage'] - $worst['teacherfbcoverage'] >= 20) {
+                if (
+                    $best['teacherfbcoverage'] !== null && $worst['teacherfbcoverage'] !== null
+                    && $best['teacherfbcoverage'] - $worst['teacherfbcoverage'] >= 20
+                ) {
                     $reasons[] = get_string('crossgroup_diag_teacher_fb', $component, (object)[
                         'best' => $best['groupname'], 'bestpct' => $best['teacherfbcoverage'],
                         'worst' => $worst['groupname'], 'worstpct' => $worst['teacherfbcoverage'],
@@ -6539,5 +6581,184 @@ class report extends \grade_report {
            GROUP BY useridfrom",
             array_merge($inparamsteach, $inparamsstu)
         );
+    }
+
+    /**
+     * Get the intervention history for a specific student in this course.
+     *
+     * @param int $studentid The student user ID.
+     * @return array Intervention records with outcomes, formatted for template rendering.
+     */
+    public function get_intervention_history(int $studentid): array {
+        global $DB;
+
+        $records = $DB->get_records_sql(
+            "SELECT s.id AS intvstudentid, i.id AS interventionid, i.teacherid, i.diagnostictype,
+                    i.scope, i.actiontype, i.customaction, i.notes, i.timecreated,
+                    s.snap_grade, s.snap_engagement, s.snap_social, s.snap_feedbackpct, s.snap_daysinactive
+               FROM {gradereport_coifish_intv_stu} s
+               JOIN {gradereport_coifish_intv} i ON i.id = s.interventionid
+              WHERE i.courseid = :courseid AND s.studentid = :studentid
+           ORDER BY i.timecreated DESC",
+            ['courseid' => $this->courseid, 'studentid' => $studentid]
+        );
+
+        if (empty($records)) {
+            return ['hashistory' => false, 'interventions' => []];
+        }
+
+        $component = 'gradereport_coifish';
+        $interventions = [];
+        foreach ($records as $rec) {
+            // Get the latest outcome for this student-intervention.
+            $outcome = $DB->get_record_sql(
+                "SELECT outcome, grade, engagement, social, feedbackpct, daysinactive, checkdays
+                   FROM {gradereport_coifish_intv_out}
+                  WHERE intvstudentid = :isid
+               ORDER BY checkdays DESC
+                  LIMIT 1",
+                ['isid' => $rec->intvstudentid]
+            );
+
+            $teacher = $DB->get_record('user', ['id' => $rec->teacherid], 'id, firstname, lastname');
+            $actionlabel = $rec->actiontype === 'custom'
+                ? $rec->customaction
+                : get_string('intervention_action_' . $rec->actiontype, $component);
+
+            $outcomelabel = $outcome ? $outcome->outcome : 'pending';
+
+            $interventions[] = [
+                'date' => userdate($rec->timecreated, get_string('strftimedateshort')),
+                'teachername' => $teacher ? fullname($teacher) : '?',
+                'diagnostictype' => $rec->diagnostictype,
+                'scope' => $rec->scope,
+                'scopelabel' => get_string('intervention_scope_' . $rec->scope, $component),
+                'actionlabel' => $actionlabel,
+                'notes' => $rec->notes,
+                'hasnotes' => !empty($rec->notes),
+                'outcome' => $outcomelabel,
+                'isimproved' => $outcomelabel === 'improved',
+                'isstable' => $outcomelabel === 'stable',
+                'isdeclined' => $outcomelabel === 'declined',
+                'ispending' => $outcomelabel === 'pending',
+                'outcomelabel' => get_string('intervention_outcome_' . $outcomelabel, $component),
+                // Snapshot vs current comparison (if outcome exists).
+                'hascomparison' => !empty($outcome),
+                'snap_grade' => $rec->snap_grade !== null ? $rec->snap_grade . '%' : '-',
+                'now_grade' => $outcome && $outcome->grade !== null ? $outcome->grade . '%' : '-',
+                'snap_engagement' => $rec->snap_engagement !== null ? $rec->snap_engagement . '%' : '-',
+                'now_engagement' => $outcome && $outcome->engagement !== null ? $outcome->engagement . '%' : '-',
+                'snap_social' => $rec->snap_social !== null ? $rec->snap_social . '%' : '-',
+                'now_social' => $outcome && $outcome->social !== null ? $outcome->social . '%' : '-',
+            ];
+        }
+
+        return ['hashistory' => true, 'interventions' => $interventions];
+    }
+
+    /**
+     * Get aggregated intervention data for the coordinator report.
+     *
+     * @return array Intervention analytics for coordinator template.
+     */
+    public function get_coordinator_intervention_data(): array {
+        global $DB;
+
+        $component = 'gradereport_coifish';
+
+        // Per-teacher intervention counts.
+        $teachercounts = $DB->get_records_sql(
+            "SELECT teacherid, COUNT(*) AS cnt, MIN(timecreated) AS firstintv
+               FROM {gradereport_coifish_intv}
+              WHERE courseid = :courseid
+           GROUP BY teacherid",
+            ['courseid' => $this->courseid]
+        );
+
+        // All outcomes for this course.
+        $outcomes = $DB->get_records_sql(
+            "SELECT o.outcome, COUNT(*) AS cnt
+               FROM {gradereport_coifish_intv_out} o
+               JOIN {gradereport_coifish_intv_stu} s ON s.id = o.intvstudentid
+               JOIN {gradereport_coifish_intv} i ON i.id = s.interventionid
+              WHERE i.courseid = :courseid AND o.outcome != 'pending'
+           GROUP BY o.outcome",
+            ['courseid' => $this->courseid]
+        );
+        $outcomecounts = [];
+        $totalresolved = 0;
+        foreach ($outcomes as $o) {
+            $outcomecounts[$o->outcome] = (int)$o->cnt;
+            $totalresolved += (int)$o->cnt;
+        }
+
+        // Effectiveness by diagnostic type.
+        $bytype = $DB->get_records_sql(
+            "SELECT i.diagnostictype,
+                    COUNT(DISTINCT i.id) AS interventions,
+                    SUM(CASE WHEN o.outcome = 'improved' THEN 1 ELSE 0 END) AS improved,
+                    SUM(CASE WHEN o.outcome = 'stable' THEN 1 ELSE 0 END) AS stable,
+                    SUM(CASE WHEN o.outcome = 'declined' THEN 1 ELSE 0 END) AS declined,
+                    COUNT(o.id) AS total_outcomes
+               FROM {gradereport_coifish_intv} i
+               JOIN {gradereport_coifish_intv_stu} s ON s.interventionid = i.id
+               LEFT JOIN {gradereport_coifish_intv_out} o ON o.intvstudentid = s.id AND o.outcome != 'pending'
+              WHERE i.courseid = :courseid
+           GROUP BY i.diagnostictype
+           ORDER BY interventions DESC",
+            ['courseid' => $this->courseid]
+        );
+        $typestats = [];
+        foreach ($bytype as $row) {
+            $total = (int)$row->total_outcomes;
+            $typestats[] = [
+                'diagnostictype' => $row->diagnostictype,
+                'interventions' => (int)$row->interventions,
+                'improvedpct' => $total > 0 ? round(($row->improved / $total) * 100) : 0,
+                'stablepct' => $total > 0 ? round(($row->stable / $total) * 100) : 0,
+                'declinedpct' => $total > 0 ? round(($row->declined / $total) * 100) : 0,
+                'hastotal' => $total > 0,
+            ];
+        }
+
+        // Students needing escalation: 3+ interventions with no improvement.
+        $escalation = $DB->get_records_sql(
+            "SELECT s.studentid, COUNT(DISTINCT s.interventionid) AS intv_count,
+                    SUM(CASE WHEN o.outcome = 'improved' THEN 1 ELSE 0 END) AS improved_count
+               FROM {gradereport_coifish_intv_stu} s
+               JOIN {gradereport_coifish_intv} i ON i.id = s.interventionid
+               LEFT JOIN {gradereport_coifish_intv_out} o ON o.intvstudentid = s.id
+              WHERE i.courseid = :courseid
+           GROUP BY s.studentid
+             HAVING COUNT(DISTINCT s.interventionid) >= 3
+                AND SUM(CASE WHEN o.outcome = 'improved' THEN 1 ELSE 0 END) = 0",
+            ['courseid' => $this->courseid]
+        );
+        $escalationlist = [];
+        foreach ($escalation as $row) {
+            $user = $DB->get_record('user', ['id' => $row->studentid], 'id, firstname, lastname');
+            if ($user) {
+                $escalationlist[] = [
+                    'fullname' => fullname($user),
+                    'interventioncount' => (int)$row->intv_count,
+                ];
+            }
+        }
+
+        $totalinterventions = array_sum(array_column(array_values((array)$teachercounts), 'cnt'));
+
+        return [
+            'hasdata' => $totalinterventions > 0,
+            'totalinterventions' => $totalinterventions,
+            'teachercounts' => $teachercounts,
+            'improvedpct' => $totalresolved > 0 ? round(($outcomecounts['improved'] ?? 0) / $totalresolved * 100) : 0,
+            'stablepct' => $totalresolved > 0 ? round(($outcomecounts['stable'] ?? 0) / $totalresolved * 100) : 0,
+            'declinedpct' => $totalresolved > 0 ? round(($outcomecounts['declined'] ?? 0) / $totalresolved * 100) : 0,
+            'pendingcount' => $totalinterventions - $totalresolved,
+            'typestats' => $typestats,
+            'hastypestats' => !empty($typestats),
+            'escalationlist' => $escalationlist,
+            'hasescalation' => !empty($escalationlist),
+        ];
     }
 }

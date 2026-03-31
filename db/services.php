@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Scheduled task definitions for CoIFish.
+ * External function definitions for CoIFish.
  *
  * @package    gradereport_coifish
  * @copyright  2026 South African Theological Seminary (ict@sats.ac.za)
@@ -24,23 +24,12 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$tasks = [
-    [
-        'classname' => 'gradereport_coifish\task\calculate_feedback_metrics',
-        'blocking' => 0,
-        'minute' => '0',
-        'hour' => '2',
-        'day' => '*',
-        'month' => '*',
-        'dayofweek' => '*',
-    ],
-    [
-        'classname' => 'gradereport_coifish\task\evaluate_interventions',
-        'blocking' => 0,
-        'minute' => '30',
-        'hour' => '2',
-        'day' => '*',
-        'month' => '*',
-        'dayofweek' => '*',
+$functions = [
+    'gradereport_coifish_log_intervention' => [
+        'classname' => 'gradereport_coifish\external\log_intervention',
+        'description' => 'Log a teacher intervention for one or more students.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'gradereport/coifish:intervene',
     ],
 ];

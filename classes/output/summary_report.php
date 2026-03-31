@@ -65,9 +65,17 @@ class summary_report implements renderable, templatable {
         $data->users = $summary;
         $data->usercount = count($summary);
 
-        // Gate the insights tab behind a site-level toggle.
-        $showinsights = get_config('gradereport_coifish', 'show_insights');
-        $data->showinsights = ($showinsights === false || $showinsights !== '0');
+        // Gate the insights tab: course override takes precedence over site setting.
+        $configkey = 'course_' . $this->report->courseid;
+        $raw = get_config('gradereport_coifish', $configkey);
+        $coursesettings = $raw ? json_decode($raw, true) : [];
+        $courseoverride = $coursesettings['show_insights'] ?? '';
+        if ($courseoverride !== '') {
+            $data->showinsights = ($courseoverride === '1');
+        } else {
+            $showinsights = get_config('gradereport_coifish', 'show_insights');
+            $data->showinsights = ($showinsights === false || $showinsights !== '0');
+        }
 
         if ($data->showinsights) {
             // Cohort-level insights for the teacher.

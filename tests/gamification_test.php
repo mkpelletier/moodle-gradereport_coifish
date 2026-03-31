@@ -166,6 +166,8 @@ final class gamification_test extends \advanced_testcase {
     public function test_all_widgets_enabled(): void {
         $data = $this->create_gamification_data();
         $this->enable_all_widgets($data['course']->id);
+        // Ensure percentile widget is visible to all students regardless of ranking.
+        set_config('percentile_threshold', 100, 'gradereport_coifish');
 
         $report = $this->create_report($data['course'], $data['target']->id);
         $result = $report->get_gamification_data(true);
@@ -236,6 +238,7 @@ final class gamification_test extends \advanced_testcase {
     public function test_widget_overall_percentile(): void {
         $data = $this->create_gamification_data();
         $this->enable_all_widgets($data['course']->id);
+        set_config('percentile_threshold', 100, 'gradereport_coifish');
 
         $report = $this->create_report($data['course'], $data['target']->id);
         $result = $report->get_gamification_data(true);
@@ -562,6 +565,7 @@ final class gamification_test extends \advanced_testcase {
     public function test_course_level_widget_override(): void {
         $data = $this->create_gamification_data();
         $this->enable_all_widgets($data['course']->id);
+        set_config('percentile_threshold', 100, 'gradereport_coifish');
 
         // Override: disable trend and streak at course level.
         set_config('course_' . $data['course']->id, json_encode([

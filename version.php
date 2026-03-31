@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'gradereport_coifish';
-$plugin->version   = 2026033100;
-$plugin->release   = '2.2.0';
+$plugin->version   = 2026040102;
+$plugin->release   = '2.4.0';
 $plugin->requires  = 2024110400; // Moodle 5.0+.
 $plugin->maturity  = MATURITY_BETA;

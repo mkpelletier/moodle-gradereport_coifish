@@ -33,7 +33,6 @@ use core\task\scheduled_task;
  * Calculate feedback quality metrics and cache them in the database.
  */
 class calculate_feedback_metrics extends scheduled_task {
-
     /**
      * Return the task name.
      *

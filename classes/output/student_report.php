@@ -202,9 +202,27 @@ class student_report implements renderable, templatable {
         $data->widgetstop = ($this->resolve_setting('widgetposition', 'top') === 'top');
 
         // Teacher-only insights tab: diagnostic + prescriptive analytics.
-        $data->isteacherview = $this->isteacherview;
-        if ($this->isteacherview) {
+        // Gate behind site/course show_insights setting.
+        $configkey = 'course_' . $this->report->courseid;
+        $raw = get_config('gradereport_coifish', $configkey);
+        $coursesettings = $raw ? json_decode($raw, true) : [];
+        $courseoverride = $coursesettings['show_insights'] ?? '';
+        if ($courseoverride !== '') {
+            $showinsights = ($courseoverride === '1');
+        } else {
+            $siteinsights = get_config('gradereport_coifish', 'show_insights');
+            $showinsights = ($siteinsights === false || $siteinsights !== '0');
+        }
+        $data->isteacherview = $this->isteacherview && $showinsights;
+        if ($data->isteacherview) {
             $data->insights = $this->report->get_insights_data();
+            // Intervention history for the student insights tab.
+            $interventionenabled = get_config('gradereport_coifish', 'intervention_enabled');
+            if ($interventionenabled === false || $interventionenabled !== '0') {
+                $data->insights['interventionhistory'] = $this->report->get_intervention_history(
+                    $this->report->get_userid()
+                );
+            }
         }
 
         // Show hidden toggle (only for users with the capability).

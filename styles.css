@@ -921,6 +921,16 @@
     height: 48px;
 }
 
+/* ── Intervention history timeline ── */
+
+.gradetracker-intervention-timeline-marker {
+    min-width: 80px;
+}
+
+.gradetracker-intervention-timeline .gradetracker-intervention-timeline-item .border-start {
+    border-color: #dee2e6;
+}
+
 /* ── Teacher Insights view ── */
 
 .gradetracker-insights {

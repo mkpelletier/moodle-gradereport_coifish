@@ -25,5 +25,66 @@
         <INDEX NAME="courseid_userid" UNIQUE="true" FIELDS="courseid, userid" COMMENT="One row per teacher per course"/>
       </INDEXES>
     </TABLE>
+    <TABLE NAME="gradereport_coifish_intv" COMMENT="Teacher intervention records linked to diagnostic analytics.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="teacherid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="diagnostictype" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false" COMMENT="Machine-readable card type"/>
+        <FIELD NAME="scope" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="individual" SEQUENCE="false" COMMENT="individual or cohort"/>
+        <FIELD NAME="actiontype" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="customaction" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="notes" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseid_teacherid" UNIQUE="false" FIELDS="courseid, teacherid"/>
+        <INDEX NAME="diagnostictype" UNIQUE="false" FIELDS="diagnostictype"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="gradereport_coifish_intv_stu" COMMENT="Per-student records for an intervention with metric snapshots.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="interventionid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="studentid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="snap_grade" TYPE="number" LENGTH="7" DECIMALS="2" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="snap_engagement" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="snap_social" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="snap_feedbackpct" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="snap_daysinactive" TYPE="int" LENGTH="5" NOTNULL="false" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="interventionid" TYPE="foreign" FIELDS="interventionid" REFTABLE="gradereport_coifish_intv" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="interventionid_studentid" UNIQUE="true" FIELDS="interventionid, studentid"/>
+        <INDEX NAME="studentid" UNIQUE="false" FIELDS="studentid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="gradereport_coifish_intv_out" COMMENT="Follow-up outcome measurements for intervention effectiveness tracking.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="intvstudentid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="FK to intv_stu.id"/>
+        <FIELD NAME="checkdays" TYPE="int" LENGTH="5" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timechecked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="grade" TYPE="number" LENGTH="7" DECIMALS="2" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="engagement" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="social" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="feedbackpct" TYPE="int" LENGTH="3" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="daysinactive" TYPE="int" LENGTH="5" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="outcome" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="pending" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="intvstudentid" TYPE="foreign" FIELDS="intvstudentid" REFTABLE="gradereport_coifish_intv_stu" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="intvstudentid_checkdays" UNIQUE="true" FIELDS="intvstudentid, checkdays"/>
+      </INDEXES>
+    </TABLE>
   </TABLES>
 </XMLDB>

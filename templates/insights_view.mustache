@@ -119,10 +119,18 @@
                                 {{action}}
                             </div>
                         </div>
-                        <div class="gradetracker-insight-card-footer">
+                        <div class="gradetracker-insight-card-footer d-flex justify-content-between align-items-center">
                             <a href="#" class="gradetracker-detail-link" data-bs-toggle="modal" data-bs-target="#gradetracker-detail-{{cardid}}">
                                 <i class="fa fa-info-circle me-1" aria-hidden="true"></i>{{#str}}detail_link, gradereport_coifish{{/str}}
                             </a>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary gradetracker-log-intervention-btn"
+                                    data-diagnostictype="{{diagnostictype}}"
+                                    data-scope="individual"
+                                    data-cardtitle="{{title}}"
+                                    data-students="[{&quot;id&quot;:{{studentid}},&quot;name&quot;:&quot;{{studentname}}&quot;}]">
+                                <i class="fa fa-clipboard me-1" aria-hidden="true"></i>{{#str}}intervention_log_btn, gradereport_coifish{{/str}}
+                            </button>
                         </div>
                     </div>
 
@@ -248,5 +256,19 @@
             </div>
         {{/hascards}}
 
+        {{! Intervention history }}
+        {{#interventionhistory}}
+            {{> gradereport_coifish/intervention_history}}
+        {{/interventionhistory}}
+
     </div>
+
+    {{! Intervention logging modal }}
+    {{> gradereport_coifish/intervention_modal}}
+
+    {{#js}}
+        require(['gradereport_coifish/intervention'], function(mod) {
+            mod.init();
+        });
+    {{/js}}
 {{/insights}}

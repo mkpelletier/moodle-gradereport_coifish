@@ -73,5 +73,66 @@ function xmldb_gradereport_coifish_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026033001, 'gradereport', 'coifish');
     }
 
+    if ($oldversion < 2026040102) {
+        // Create intervention tracking tables.
+
+        // 1. Main intervention record.
+        $table = new xmldb_table('gradereport_coifish_intv');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('teacherid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('diagnostictype', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('scope', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'individual');
+        $table->add_field('actiontype', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('customaction', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('notes', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('courseid_teacherid', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'teacherid']);
+        $table->add_index('diagnostictype', XMLDB_INDEX_NOTUNIQUE, ['diagnostictype']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // 2. Per-student intervention records with metric snapshots.
+        $table = new xmldb_table('gradereport_coifish_intv_stu');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('interventionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('studentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('snap_grade', XMLDB_TYPE_NUMBER, '7, 2', null, null, null, null);
+        $table->add_field('snap_engagement', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('snap_social', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('snap_feedbackpct', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('snap_daysinactive', XMLDB_TYPE_INTEGER, '5', null, null, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('interventionid', XMLDB_KEY_FOREIGN, ['interventionid'], 'gradereport_coifish_intv', ['id']);
+        $table->add_index('interventionid_studentid', XMLDB_INDEX_UNIQUE, ['interventionid', 'studentid']);
+        $table->add_index('studentid', XMLDB_INDEX_NOTUNIQUE, ['studentid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // 3. Follow-up outcome measurements.
+        $table = new xmldb_table('gradereport_coifish_intv_out');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('intvstudentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('checkdays', XMLDB_TYPE_INTEGER, '5', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timechecked', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('grade', XMLDB_TYPE_NUMBER, '7, 2', null, null, null, null);
+        $table->add_field('engagement', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('social', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('feedbackpct', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('daysinactive', XMLDB_TYPE_INTEGER, '5', null, null, null, null);
+        $table->add_field('outcome', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'pending');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('intvstudentid', XMLDB_KEY_FOREIGN, ['intvstudentid'], 'gradereport_coifish_intv_stu', ['id']);
+        $table->add_index('intvstudentid_checkdays', XMLDB_INDEX_UNIQUE, ['intvstudentid', 'checkdays']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026040102, 'gradereport', 'coifish');
+    }
+
     return true;
 }

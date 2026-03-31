@@ -36,6 +36,16 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    'gradereport/coifish:intervene' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
     'gradereport/coifish:viewcoordinator' => [
         'riskbitmask' => RISK_PERSONAL,
         'captype' => 'read',

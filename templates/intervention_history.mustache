@@ -1,0 +1,86 @@
+{{!
+    @template gradereport_coifish/intervention_history
+
+    Timeline of past interventions for a student with outcome indicators.
+
+    Context variables required for this template:
+    * hashistory (bool) - Whether there are intervention records.
+    * interventions (array) - Array of intervention records.
+
+    Example context (json):
+    {
+        "hashistory": true,
+        "interventions": []
+    }
+}}
+<div class="gradetracker-intervention-history mt-4">
+    <h5 class="mb-3">
+        <i class="fa fa-history me-1" aria-hidden="true"></i>
+        {{#str}}intervention_history_title, gradereport_coifish{{/str}}
+    </h5>
+
+    {{^hashistory}}
+        <p class="text-muted small">
+            {{#str}}intervention_history_empty, gradereport_coifish{{/str}}
+        </p>
+    {{/hashistory}}
+
+    {{#hashistory}}
+        <div class="gradetracker-intervention-timeline">
+            {{#interventions}}
+                <div class="gradetracker-intervention-timeline-item d-flex mb-3">
+                    <div class="gradetracker-intervention-timeline-marker me-3 text-center">
+                        <div class="small fw-bold text-muted">{{date}}</div>
+                        <span class="badge
+                            {{#isimproved}}bg-success{{/isimproved}}
+                            {{#isstable}}bg-warning text-dark{{/isstable}}
+                            {{#isdeclined}}bg-danger{{/isdeclined}}
+                            {{#ispending}}bg-secondary{{/ispending}}
+                        ">{{outcomelabel}}</span>
+                    </div>
+                    <div class="flex-grow-1 border-start ps-3">
+                        <div class="fw-semibold">{{actionlabel}}</div>
+                        <div class="small text-muted">
+                            {{#str}}intervention_history_by, gradereport_coifish, {{teachername}}{{/str}}
+                            <span class="badge bg-light text-dark border ms-1">{{scopelabel}}</span>
+                            <span class="badge bg-light text-dark border ms-1">{{diagnostictype}}</span>
+                        </div>
+                        {{#hasnotes}}
+                            <div class="small text-muted fst-italic mt-1">{{notes}}</div>
+                        {{/hasnotes}}
+                        {{#hascomparison}}
+                            <div class="small mt-2">
+                                <table class="table table-sm table-bordered mb-0" style="max-width: 400px;">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th></th>
+                                            <th class="text-center">{{#str}}intervention_snapshot_then, gradereport_coifish{{/str}}</th>
+                                            <th class="text-center">{{#str}}intervention_snapshot_now, gradereport_coifish{{/str}}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>{{#str}}intervention_snapshot_grade, gradereport_coifish{{/str}}</td>
+                                            <td class="text-center">{{snap_grade}}</td>
+                                            <td class="text-center">{{now_grade}}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{#str}}intervention_snapshot_engagement, gradereport_coifish{{/str}}</td>
+                                            <td class="text-center">{{snap_engagement}}</td>
+                                            <td class="text-center">{{now_engagement}}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>{{#str}}intervention_snapshot_social, gradereport_coifish{{/str}}</td>
+                                            <td class="text-center">{{snap_social}}</td>
+                                            <td class="text-center">{{now_social}}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        {{/hascomparison}}
+                    </div>
+                </div>
+            {{/interventions}}
+        </div>
+    {{/hashistory}}
+</div>

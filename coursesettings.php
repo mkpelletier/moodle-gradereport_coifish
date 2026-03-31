@@ -62,6 +62,7 @@ if (data_submitted() && confirm_sesskey()) {
 
     $newsettings['defaultview'] = optional_param('defaultview', '', PARAM_ALPHA);
     $newsettings['widgetposition'] = optional_param('widgetposition', '', PARAM_ALPHA);
+    $newsettings['show_insights'] = optional_param('show_insights', '', PARAM_RAW_TRIMMED);
     $newsettings['gamification_enabled'] = (bool)optional_param('gamification_enabled', 0, PARAM_BOOL);
 
     // Widget overrides — only for site-enabled widgets.
@@ -83,6 +84,7 @@ if (data_submitted() && confirm_sesskey()) {
 // Determine current values.
 $currentdefaultview = $coursesettings['defaultview'] ?? '';
 $currentwidgetposition = $coursesettings['widgetposition'] ?? '';
+$currentshowinsights = $coursesettings['show_insights'] ?? '';
 $gamificationenabled = $coursesettings['gamification_enabled'] ?? false;
 $widgetoverrides = $coursesettings['widgets'] ?? [];
 
@@ -134,6 +136,29 @@ foreach ($positionoptions as $val => $label) {
 echo '    </select>';
 echo '    <small class="form-text text-muted">';
 echo         get_string('coursesettings_widgetposition_desc', 'gradereport_coifish');
+echo '    </small>';
+echo '  </div>';
+echo '</div>';
+
+// Insights tab override.
+echo '<div class="form-group row mb-3">';
+echo '  <label class="col-md-3 col-form-label" for="show_insights"><strong>';
+echo       get_string('coursesettings_show_insights', 'gradereport_coifish');
+echo '  </strong></label>';
+echo '  <div class="col-md-6">';
+echo '    <select class="form-select" id="show_insights" name="show_insights">';
+$insightsoptions = [
+    '' => get_string('defaultview_usesite', 'gradereport_coifish'),
+    '1' => get_string('setting_enabled', 'gradereport_coifish'),
+    '0' => get_string('setting_disabled', 'gradereport_coifish'),
+];
+foreach ($insightsoptions as $val => $label) {
+    $sel = ($currentshowinsights === $val) ? ' selected' : '';
+    echo '      <option value="' . $val . '"' . $sel . '>' . $label . '</option>';
+}
+echo '    </select>';
+echo '    <small class="form-text text-muted">';
+echo         get_string('coursesettings_show_insights_desc', 'gradereport_coifish');
 echo '    </small>';
 echo '  </div>';
 echo '</div>';
