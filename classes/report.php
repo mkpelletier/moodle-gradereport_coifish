@@ -2786,11 +2786,29 @@ class report extends \grade_report {
             $breakdown[] = ['label' => get_string('pages', 'wiki'), 'count' => $wikiedits];
         }
 
-        // Relative thresholds: use participation rate (threads engaged / total threads).
-        $totaldiscussions = (int)$DB->count_records_sql(
-            "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :courseid",
-            ['courseid' => $this->courseid]
+        // Group-aware participation rate.
+        $alldiscussions = $DB->get_records_sql(
+            "SELECT fd.id, fd.groupid, cm.groupmode
+               FROM {forum_discussions} fd
+               JOIN {forum} f ON f.id = fd.forum
+               JOIN {course_modules} cm ON cm.instance = f.id AND cm.course = :courseid
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'forum'
+              WHERE fd.course = :courseid2",
+            ['courseid' => $this->courseid, 'courseid2' => $this->courseid]
         );
+        $usergroups = groups_get_user_groups($this->courseid, $userid);
+        $mygroupids = $usergroups[0] ?? [];
+        $visiblediscussions = 0;
+        foreach ($alldiscussions as $disc) {
+            if ((int)$disc->groupmode === SEPARATEGROUPS) {
+                if ((int)$disc->groupid === -1 || in_array((int)$disc->groupid, $mygroupids)) {
+                    $visiblediscussions++;
+                }
+            } else {
+                $visiblediscussions++;
+            }
+        }
+        $totaldiscussions = count($alldiscussions);
         $threadsparticipated = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT fd.id)
                FROM {forum_posts} fp
@@ -2798,9 +2816,13 @@ class report extends \grade_report {
               WHERE fd.course = :courseid AND fp.userid = :userid",
             ['courseid' => $this->courseid, 'userid' => $userid]
         );
-        $participationrate = $totaldiscussions > 0
-            ? round(($threadsparticipated / $totaldiscussions) * 100)
+        // Breadth against visible discussions, not all discussions.
+        $breadth = $visiblediscussions > 0
+            ? min(100, round(($threadsparticipated / $visiblediscussions) * 200))
             : ($total > 0 ? 50 : 0);
+        // Volume relative to a reasonable benchmark (5 posts = 100%).
+        $volume = min(100, round($total / 5 * 100));
+        $participationrate = round($breadth * 0.6 + $volume * 0.4);
 
         $level = $this->get_coi_level($participationrate, $this->get_coi_thresholds('sp', [1, 20, 50, 80]));
 
@@ -2906,8 +2928,13 @@ class report extends \grade_report {
             $breakdown[] = ['label' => get_string('entries', 'data'), 'count' => $datarecords];
         }
 
-        // Relative thresholds: count distinct peers this student has interacted with.
-        $peersengaged = (int)$DB->count_records_sql(
+        // Group-aware peer connection: count distinct peers interacted with.
+        // Get student's groups for filtering.
+        $usergroups = groups_get_user_groups($this->courseid, $userid);
+        $mygroupids = $usergroups[0] ?? [];
+
+        // Peers replied to in forums.
+        $peersrepliedto = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT parent.userid)
                FROM {forum_posts} fp
                JOIN {forum_posts} parent ON parent.id = fp.parent
@@ -2918,15 +2945,47 @@ class report extends \grade_report {
                 AND fp.parent != 0",
             ['courseid' => $this->courseid, 'userid' => $userid, 'userid2' => $userid]
         );
-        // Compare to total active posters in the course.
-        $activeposters = (int)$DB->count_records_sql(
+
+        // Peers who replied to this student's posts.
+        $peersreplying = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT fp.userid)
                FROM {forum_posts} fp
+               JOIN {forum_posts} parent ON parent.id = fp.parent
                JOIN {forum_discussions} fd ON fd.id = fp.discussion
               WHERE fd.course = :courseid
-                AND fp.userid != :userid",
-            ['courseid' => $this->courseid, 'userid' => $userid]
+                AND parent.userid = :userid
+                AND fp.userid != :userid2
+                AND fp.parent != 0",
+            ['courseid' => $this->courseid, 'userid' => $userid, 'userid2' => $userid]
         );
+
+        // Unique peers = union of both directions.
+        $peersengaged = max($peersrepliedto, $peersreplying);
+
+        // Active peers: group-aware count of students who could be interacted with.
+        if (!empty($mygroupids)) {
+            // In separate groups, count only group members.
+            [$grpinsql, $grpparams] = $DB->get_in_or_equal($mygroupids, SQL_PARAMS_NAMED, 'grp');
+            $activeposters = (int)$DB->count_records_sql(
+                "SELECT COUNT(DISTINCT gm.userid)
+                   FROM {groups_members} gm
+                  WHERE gm.groupid $grpinsql
+                    AND gm.userid != :userid",
+                array_merge($grpparams, ['userid' => $userid])
+            );
+        } else {
+            // No groups: count all enrolled students except self.
+            $activeposters = (int)$DB->count_records_sql(
+                "SELECT COUNT(DISTINCT fp.userid)
+                   FROM {forum_posts} fp
+                   JOIN {forum_discussions} fd ON fd.id = fp.discussion
+                  WHERE fd.course = :courseid
+                    AND fp.userid != :userid",
+                ['courseid' => $this->courseid, 'userid' => $userid]
+            );
+        }
+
+        // Peer interaction rate: how many available peers has this student connected with.
         $peerrate = $activeposters > 0
             ? round(($peersengaged / $activeposters) * 100)
             : ($total > 0 ? 50 : 0);
@@ -4235,6 +4294,9 @@ class report extends \grade_report {
             'userid, finalgrade'
         );
 
+        // Compute running averages for all students.
+        $runningaverages = $this->get_bulk_running_averages($userids);
+
         $summary = [];
         foreach ($enrolledusers as $user) {
             $finalgrade = isset($grades[$user->id]) ? $grades[$user->id]->finalgrade : null;
@@ -4244,6 +4306,7 @@ class report extends \grade_report {
                     (float)$finalgrade / (float)$this->courseitem->grademax
                 );
             }
+            $runningavg = $runningaverages[$user->id] ?? null;
             $summary[] = [
                 'userid' => $user->id,
                 'fullname' => fullname($user),
@@ -4251,6 +4314,7 @@ class report extends \grade_report {
                     ? $this->format_grade((float)$finalgrade, $this->courseitem) : '–',
                 'grademax' => $this->format_grademax((float)$this->courseitem->grademax, $this->courseitem),
                 'percentage' => $percentage,
+                'runningaverage' => $runningavg !== null ? $runningavg . '%' : '–',
                 'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                     'id' => $this->courseid,
                     'userid' => $user->id,
@@ -4259,6 +4323,84 @@ class report extends \grade_report {
         }
 
         return $summary;
+    }
+
+    /**
+     * Compute running averages for multiple students.
+     *
+     * For each student, calculates the weighted average based only on graded items,
+     * re-normalising weights to exclude ungraded items. This gives a realistic
+     * picture of performance early in a course.
+     *
+     * @param array $userids Array of student user IDs.
+     * @return array Keyed by userid => running average percentage (0-100), or null if nothing graded.
+     */
+    public function get_bulk_running_averages(array $userids): array {
+        global $DB;
+
+        if (empty($userids)) {
+            return [];
+        }
+
+        // Get all grade items for this course (excluding the course total itself).
+        $items = $DB->get_records_select(
+            'grade_items',
+            'courseid = :courseid AND itemtype != :type',
+            ['courseid' => $this->courseid, 'type' => 'course'],
+            '',
+            'id, itemtype, grademax, aggregationcoef, aggregationcoef2, categoryid'
+        );
+
+        if (empty($items)) {
+            return array_fill_keys($userids, null);
+        }
+
+        $itemids = array_keys($items);
+        [$insqlitems, $inparamsitems] = $DB->get_in_or_equal($itemids, SQL_PARAMS_NAMED, 'gi');
+        [$insqlusers, $inparamsusers] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'gu');
+
+        // Get all grades for these items and users in one query.
+        $allgrades = $DB->get_records_sql(
+            "SELECT id, userid, itemid, finalgrade
+               FROM {grade_grades}
+              WHERE itemid $insqlitems AND userid $insqlusers",
+            array_merge($inparamsitems, $inparamsusers)
+        );
+
+        // Group grades by user.
+        $usergrades = [];
+        foreach ($allgrades as $gg) {
+            $usergrades[$gg->userid][$gg->itemid] = $gg->finalgrade;
+        }
+
+        // Calculate running average for each student.
+        $result = [];
+        foreach ($userids as $uid) {
+            $gradedweightsum = 0;
+            $weightedscoresum = 0;
+            $mygrades = $usergrades[$uid] ?? [];
+
+            foreach ($items as $item) {
+                $fg = $mygrades[$item->id] ?? null;
+                if ($fg === null || (float)$item->grademax <= 0) {
+                    continue;
+                }
+                // Use aggregationcoef2 (natural weighting) if available, else grademax as weight proxy.
+                $weight = (float)$item->aggregationcoef2 > 0
+                    ? (float)$item->aggregationcoef2
+                    : (float)$item->grademax;
+                $gradedweightsum += $weight;
+                $weightedscoresum += $weight * ((float)$fg / (float)$item->grademax);
+            }
+
+            if ($gradedweightsum > 0) {
+                $result[$uid] = round(($weightedscoresum / $gradedweightsum) * 100, 1);
+            } else {
+                $result[$uid] = null;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -4309,13 +4451,16 @@ class report extends \grade_report {
             'userid, finalgrade'
         );
         $grademax = (float)$this->courseitem->grademax;
+        // Running averages give a realistic picture early in the course.
+        $runningaverages = $this->get_bulk_running_averages($userids);
         $percentages = [];
         $graded = 0;
         $ungraded = 0;
         foreach ($userids as $uid) {
             $fg = isset($grades[$uid]) ? $grades[$uid]->finalgrade : null;
             if ($fg !== null && $grademax > 0) {
-                $pct = round(((float)$fg / $grademax) * 100, 1);
+                // Use running average for display; fall back to marks achieved if unavailable.
+                $pct = $runningaverages[$uid] ?? round(((float)$fg / $grademax) * 100, 1);
                 $percentages[$uid] = $pct;
                 $graded++;
             } else {
@@ -4374,14 +4519,49 @@ class report extends \grade_report {
         }
 
         // 2. COI presence aggregation.
-        // Social Presence: forum participation rate per student.
-        $totaldiscussions = (int)$DB->count_records_sql(
-            "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :courseid",
-            ['courseid' => $this->courseid]
-        );
+        // Social Presence: multi-signal composite accounting for forum group modes,
+        // BBB attendance, collaborative activities, and configured messaging.
 
-        // Per-user thread participation counts.
-        $participationsql = "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads
+        // 2a. Forum participation — group-aware.
+        // Get all discussions with their forum group mode.
+        $alldiscussions = $DB->get_records_sql(
+            "SELECT fd.id, fd.groupid, fd.forum, cm.groupmode
+               FROM {forum_discussions} fd
+               JOIN {forum} f ON f.id = fd.forum
+               JOIN {course_modules} cm ON cm.instance = f.id AND cm.course = :courseid
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'forum'
+              WHERE fd.course = :courseid2",
+            ['courseid' => $this->courseid, 'courseid2' => $this->courseid]
+        );
+        $totaldiscussions = count($alldiscussions);
+
+        // Get group memberships for all students in this course.
+        $studentgroups = [];
+        foreach ($userids as $uid) {
+            $ugroups = groups_get_user_groups($this->courseid, $uid);
+            $studentgroups[$uid] = $ugroups[0] ?? [];
+        }
+
+        // Calculate per-student visible discussions (respecting group mode).
+        $visiblediscussions = [];
+        foreach ($userids as $uid) {
+            $visible = 0;
+            foreach ($alldiscussions as $disc) {
+                if ((int)$disc->groupmode === SEPARATEGROUPS) {
+                    // Separate groups: student can only see their group's discussions or "all groups" (-1).
+                    if ((int)$disc->groupid === -1 || in_array((int)$disc->groupid, $studentgroups[$uid])) {
+                        $visible++;
+                    }
+                } else {
+                    // No groups or visible groups: student can see all discussions.
+                    $visible++;
+                }
+            }
+            $visiblediscussions[$uid] = $visible;
+        }
+
+        // Per-user forum participation: both thread breadth and post volume.
+        $participationsql = "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads, COUNT(fp.id) AS posts
                                FROM {forum_posts} fp
                                JOIN {forum_discussions} fd ON fd.id = fp.discussion
                               WHERE fd.course = :courseid AND fp.userid $insql
@@ -4390,6 +4570,93 @@ class report extends \grade_report {
             $participationsql,
             array_merge(['courseid' => $this->courseid], $inparams)
         );
+
+        // Calculate cohort average post count for relative comparison.
+        $allpostcounts = array_map(function ($p) {
+            return (int)$p->posts;
+        }, $participations);
+        $avgposts = !empty($allpostcounts) ? array_sum($allpostcounts) / count($allpostcounts) : 0;
+
+        // 2b. BBB session attendance (if installed).
+        $bbbattendance = [];
+        $dbman = $DB->get_manager();
+        if ($dbman->table_exists('bigbluebuttonbn_logs')) {
+            $bbbrecords = $DB->get_records_sql(
+                "SELECT l.userid, COUNT(DISTINCT l.bigbluebuttonbnid) AS sessions
+                   FROM {bigbluebuttonbn_logs} l
+                   JOIN {bigbluebuttonbn} b ON b.id = l.bigbluebuttonbnid
+                  WHERE b.course = :courseid AND l.userid $insql
+               GROUP BY l.userid",
+                array_merge(['courseid' => $this->courseid], $inparams)
+            );
+            foreach ($bbbrecords as $rec) {
+                $bbbattendance[$rec->userid] = (int)$rec->sessions;
+            }
+        }
+        $totalbbbsessions = 0;
+        if (!empty($bbbattendance)) {
+            $totalbbbsessions = (int)$DB->count_records_sql(
+                "SELECT COUNT(DISTINCT id) FROM {bigbluebuttonbn} WHERE course = :courseid",
+                ['courseid' => $this->courseid]
+            );
+        }
+
+        // 2c. Collaborative activity participation (wiki, glossary, database, workshop).
+        [$insqlcollab, $inparamscollab] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'collab');
+        $collabcounts = $DB->get_records_sql(
+            "SELECT l.userid, COUNT(DISTINCT l.contextinstanceid) AS activities
+               FROM {logstore_standard_log} l
+              WHERE l.courseid = :courseid AND l.userid $insqlcollab
+                AND l.action = 'created'
+                AND l.component IN ('mod_glossary', 'mod_wiki', 'mod_data', 'mod_workshop')
+                AND l.timecreated > :mintime
+           GROUP BY l.userid",
+            array_merge(
+                ['courseid' => $this->courseid, 'mintime' => time() - 365 * 86400],
+                $inparamscollab
+            )
+        );
+
+        // 2d. Peer messaging (using configured messaging sources).
+        $msgsources = get_config('gradereport_coifish', 'coordinator_messaging_sources');
+        $msgsources = !empty($msgsources) ? explode(',', $msgsources) : ['core'];
+        [$insqlmsg, $inparamsmsg] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'msgp');
+        $peermessages = [];
+        foreach ($msgsources as $source) {
+            $source = trim($source);
+            if ($source === 'core') {
+                // Core messaging: count messages sent to peers (other enrolled students).
+                $msgcounts = $DB->get_records_sql(
+                    "SELECT m.useridfrom AS userid, COUNT(*) AS cnt
+                       FROM {messages} m
+                       JOIN {message_conversation_members} mcm ON mcm.conversationid = m.conversationid
+                      WHERE m.useridfrom $insqlmsg
+                        AND mcm.userid $insqlmsg
+                        AND m.useridfrom != mcm.userid
+                   GROUP BY m.useridfrom",
+                    array_merge($inparamsmsg, $inparamsmsg)
+                );
+            } else {
+                // Plugin messaging via logstore.
+                $msgcounts = $DB->get_records_sql(
+                    "SELECT userid, COUNT(*) AS cnt
+                       FROM {logstore_standard_log}
+                      WHERE component = :component
+                        AND action = 'sent' AND target LIKE '%message%'
+                        AND userid $insqlmsg
+                        AND courseid = :courseid
+                   GROUP BY userid",
+                    array_merge(['component' => $source, 'courseid' => $this->courseid], $inparamsmsg)
+                );
+            }
+            foreach ($msgcounts as $rec) {
+                $uid = (int)$rec->userid;
+                $peermessages[$uid] = ($peermessages[$uid] ?? 0) + (int)$rec->cnt;
+            }
+        }
+        $avgmessages = !empty($peermessages)
+            ? array_sum($peermessages) / count($peermessages)
+            : 0;
 
         // Per-user last forum activity.
         $lastpostsql = "SELECT fp.userid, MAX(fp.created) AS lastpost
@@ -4569,9 +4836,51 @@ class report extends \grade_report {
             $riskflags = 0;
             $flags = [];
 
-            // Social Presence — participation rate.
+            // Social Presence — multi-signal composite with group-aware forum metrics.
             $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-            $sprate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
+            $postcount = isset($participations[$uid]) ? (int)$participations[$uid]->posts : 0;
+            $myvisible = $visiblediscussions[$uid] ?? $totaldiscussions;
+
+            // Forum breadth: fraction of VISIBLE discussions participated in.
+            $breadthrate = $myvisible > 0
+                ? min(100, round(($threads / $myvisible) * 200))
+                : ($threads > 0 ? 50 : 0);
+            // Forum volume: post count relative to cohort average.
+            $volumerate = $avgposts > 0
+                ? min(100, round(($postcount / $avgposts) * 50))
+                : ($postcount > 0 ? 50 : 0);
+            // Forum composite (breadth + volume).
+            $forumrate = round($breadthrate * 0.6 + $volumerate * 0.4);
+
+            // BBB attendance rate.
+            $bbbrate = 0;
+            if ($totalbbbsessions > 0) {
+                $mysessions = $bbbattendance[$uid] ?? 0;
+                $bbbrate = min(100, round(($mysessions / $totalbbbsessions) * 100));
+            }
+
+            // Collaborative activity rate (relative to cohort).
+            $mycollabs = isset($collabcounts[$uid]) ? (int)$collabcounts[$uid]->activities : 0;
+            $avgcollabs = !empty($collabcounts) ? array_sum(array_map(function ($c) {
+                return (int)$c->activities;
+            }, $collabcounts)) / count($collabcounts) : 0;
+            $collabrate = $avgcollabs > 0
+                ? min(100, round(($mycollabs / $avgcollabs) * 50))
+                : ($mycollabs > 0 ? 50 : 0);
+
+            // Peer messaging rate (relative to cohort).
+            $mymsgs = $peermessages[$uid] ?? 0;
+            $msgrate = $avgmessages > 0
+                ? min(100, round(($mymsgs / $avgmessages) * 50))
+                : ($mymsgs > 0 ? 50 : 0);
+
+            // Weighted composite: forum 50%, BBB 20%, collaborative 15%, messaging 15%.
+            // If BBB is not installed, redistribute weight to forum.
+            if ($totalbbbsessions > 0) {
+                $sprate = round($forumrate * 0.50 + $bbbrate * 0.20 + $collabrate * 0.15 + $msgrate * 0.15);
+            } else {
+                $sprate = round($forumrate * 0.65 + $collabrate * 0.20 + $msgrate * 0.15);
+            }
             $splevel = $this->get_coi_level($sprate, $spthresholds);
             $splevels[$splevel['class']]++;
             // Discussion reading — silent learner detection.
@@ -4590,7 +4899,8 @@ class report extends \grade_report {
                 $isolatedstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
-                    'metric' => $threads . ' / ' . $totaldiscussions . ' (' . $sprate . '%)'
+                    'metric' => $postcount . ' posts in ' . $threads . '/' . $myvisible
+                        . ' discussions (' . $sprate . '%)'
                         . ($issilent ? ' · ' . get_string('cohort_silent_label', $component, $dvcount) : ''),
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
@@ -4675,7 +4985,7 @@ class report extends \grade_report {
                 'sprate' => $sprate,
                 'cprate' => $cprate,
                 'fbrate' => $fbrate,
-                'posts' => $threads,
+                'posts' => $postcount,
             ];
 
             // Collect at-risk students (2+ flags).
@@ -4903,7 +5213,7 @@ class report extends \grade_report {
                 'title' => get_string('cohort_card_isolation_title', $component),
                 'diagnostic' => $isolationdiag,
                 'action' => get_string('cohort_card_isolation_action', $component, (object)[
-                    'count' => $lowisolation, 'threads' => $totaldiscussions,
+                    'count' => $lowisolation,
                 ]),
             ], $detail);
         }
@@ -5110,18 +5420,19 @@ class report extends \grade_report {
         $compoundnames = [];
         $compoundstudents = [];
         foreach ($userids as $uid) {
-            $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-            $sprate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
+            // Use the composite SP rate computed in the main loop.
+            $sprate = $userratedata[$uid]['sprate'] ?? 0;
             $pct = $percentages[$uid];
             if ($sprate < $spthresholds[1] && $pct !== null && $pct < $passthreshold) {
                 $isolatedandfailing++;
                 if (count($compoundnames) < 3) {
                     $compoundnames[] = fullname($enrolledusers[$uid]);
                 }
+                $postcount = $userratedata[$uid]['posts'] ?? 0;
                 $compoundstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
-                    'metric' => $pct . '% · ' . $threads . '/' . $totaldiscussions . ' threads',
+                    'metric' => $pct . '% · ' . $postcount . ' posts (SP: ' . $sprate . '%)',
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
                     ]))->out(false),
@@ -5478,23 +5789,33 @@ class report extends \grade_report {
             }
             $avg = !empty($pcts) ? round(array_sum($pcts) / count($pcts), 1) : null;
 
-            // COI presence health — lightweight: count forum threads per user.
-            $totaldiscussions = (int)$DB->count_records_sql(
-                "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :cid",
-                ['cid' => $this->courseid]
-            );
-            $participations = $DB->get_records_sql(
-                "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads
+            // COI presence health — multi-signal composite per student.
+            $grpparticipations = $DB->get_records_sql(
+                "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads, COUNT(fp.id) AS posts
                    FROM {forum_posts} fp
                    JOIN {forum_discussions} fd ON fd.id = fp.discussion
                   WHERE fd.course = :cid AND fp.userid $insql
                GROUP BY fp.userid",
                 array_merge(['cid' => $this->courseid], $inparams)
             );
+            $grpallposts = array_map(function ($p) {
+                return (int)$p->posts;
+            }, $grpparticipations);
+            $grpavgposts = !empty($grpallposts) ? array_sum($grpallposts) / count($grpallposts) : 0;
+
             $sphealthy = 0;
             foreach ($uids as $uid) {
-                $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-                $rate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
+                $threads = isset($grpparticipations[$uid]) ? (int)$grpparticipations[$uid]->threads : 0;
+                $posts = isset($grpparticipations[$uid]) ? (int)$grpparticipations[$uid]->posts : 0;
+                // Use group-visible discussions if available, else all discussions.
+                $myvisible = $count; // Approximate: at least group-level.
+                $breadth = $myvisible > 0
+                    ? min(100, round(($threads / max(1, $myvisible)) * 200))
+                    : ($threads > 0 ? 50 : 0);
+                $volume = $grpavgposts > 0
+                    ? min(100, round(($posts / $grpavgposts) * 50))
+                    : ($posts > 0 ? 50 : 0);
+                $rate = round($breadth * 0.6 + $volume * 0.4);
                 $level = $this->get_coi_level($rate, $spthresholds);
                 if ($level['level'] >= 2) { // Developing or above.
                     $sphealthy++;
@@ -5506,8 +5827,11 @@ class report extends \grade_report {
             $atriskcount = 0;
             foreach ($uids as $uid) {
                 $flags = 0;
-                $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-                $rate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
+                $threads = isset($grpparticipations[$uid]) ? (int)$grpparticipations[$uid]->threads : 0;
+                $posts = isset($grpparticipations[$uid]) ? (int)$grpparticipations[$uid]->posts : 0;
+                $breadth = $count > 0 ? min(100, round(($threads / max(1, $count)) * 200)) : ($threads > 0 ? 50 : 0);
+                $volume = $grpavgposts > 0 ? min(100, round(($posts / $grpavgposts) * 50)) : ($posts > 0 ? 50 : 0);
+                $rate = round($breadth * 0.6 + $volume * 0.4);
                 if ($rate < $spthresholds[1]) {
                     $flags++;
                 }
@@ -5983,23 +6307,27 @@ class report extends \grade_report {
             $avg = !empty($pcts) ? round(array_sum($pcts) / count($pcts), 1) : null;
 
             // At-risk: students both isolated and failing.
-            $totaldiscussions = (int)$DB->count_records_sql(
-                "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :cid",
-                ['cid' => $this->courseid]
-            );
-            $participations = $DB->get_records_sql(
-                "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads
+            $ctparticipations = $DB->get_records_sql(
+                "SELECT fp.userid, COUNT(DISTINCT fd.id) AS threads, COUNT(fp.id) AS posts
                    FROM {forum_posts} fp
                    JOIN {forum_discussions} fd ON fd.id = fp.discussion
                   WHERE fd.course = :cid AND fp.userid $insql
                GROUP BY fp.userid",
                 array_merge(['cid' => $this->courseid], $inparams)
             );
+            $ctallposts = array_map(function ($p) {
+                return (int)$p->posts;
+            }, $ctparticipations);
+            $ctavgposts = !empty($ctallposts) ? array_sum($ctallposts) / count($ctallposts) : 0;
+            $studentcount = count($studentids);
             $atriskcount = 0;
             foreach ($studentids as $uid) {
                 $flags = 0;
-                $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-                $rate = $totaldiscussions > 0 ? round(($threads / $totaldiscussions) * 100) : ($threads > 0 ? 50 : 0);
+                $threads = isset($ctparticipations[$uid]) ? (int)$ctparticipations[$uid]->threads : 0;
+                $posts = isset($ctparticipations[$uid]) ? (int)$ctparticipations[$uid]->posts : 0;
+                $breadth = $studentcount > 0 ? min(100, round(($threads / max(1, $studentcount)) * 200)) : ($threads > 0 ? 50 : 0);
+                $volume = $ctavgposts > 0 ? min(100, round(($posts / $ctavgposts) * 50)) : ($posts > 0 ? 50 : 0);
+                $rate = round($breadth * 0.6 + $volume * 0.4);
                 if ($rate < $spthresholds[1]) {
                     $flags++;
                 }

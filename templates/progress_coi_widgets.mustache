@@ -93,6 +93,11 @@
                         {{#hasaction}}
                             <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
                         {{/hasaction}}
+                        <div class="gradetracker-coi-method-link">
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#gradetracker-coi-method-modal-community" class="small text-muted">
+                                <i class="fa fa-question-circle me-1" aria-hidden="true"></i>{{#str}}coi_how_determined, gradereport_coifish{{/str}}
+                            </a>
+                        </div>
                     </div>
                 {{/iscoicommunity}}
 
@@ -121,6 +126,11 @@
                         {{#hasaction}}
                             <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
                         {{/hasaction}}
+                        <div class="gradetracker-coi-method-link">
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#gradetracker-coi-method-modal-peer" class="small text-muted">
+                                <i class="fa fa-question-circle me-1" aria-hidden="true"></i>{{#str}}coi_how_determined, gradereport_coifish{{/str}}
+                            </a>
+                        </div>
                     </div>
                 {{/iscoipeerconnection}}
 
@@ -149,6 +159,11 @@
                         {{#hasaction}}
                             <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
                         {{/hasaction}}
+                        <div class="gradetracker-coi-method-link">
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#gradetracker-coi-method-modal-cognitive" class="small text-muted">
+                                <i class="fa fa-question-circle me-1" aria-hidden="true"></i>{{#str}}coi_how_determined, gradereport_coifish{{/str}}
+                            </a>
+                        </div>
                     </div>
                 {{/iscoilearningdepth}}
 
@@ -181,10 +196,108 @@
                         {{#hasaction}}
                             <div class="gradetracker-widget-action {{^isrisk}}gradetracker-widget-guidance{{/isrisk}}">{{action}}</div>
                         {{/hasaction}}
+                        <div class="gradetracker-coi-method-link">
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#gradetracker-coi-method-modal-teaching" class="small text-muted">
+                                <i class="fa fa-question-circle me-1" aria-hidden="true"></i>{{#str}}coi_how_determined, gradereport_coifish{{/str}}
+                            </a>
+                        </div>
                     </div>
                 {{/iscoifeedbackloop}}
 
             {{/coi.widgets}}
         </div>
     </div>
+
+    {{! Community Engagement methodology modal }}
+    <div class="modal fade" id="gradetracker-coi-method-modal-community" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa fa-info-circle me-1" aria-hidden="true"></i> {{#str}}coi_method_community_title, gradereport_coifish{{/str}}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>{{#str}}coi_method_community_desc, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_signals_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_community_signals, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_levels_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_levels_desc, gradereport_coifish{{/str}}</p>
+                    <div class="alert alert-secondary small py-2 mb-0">
+                        <i class="fa fa-book me-1" aria-hidden="true"></i>
+                        {{#str}}coi_method_cite, gradereport_coifish{{/str}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{! Peer Connection methodology modal }}
+    <div class="modal fade" id="gradetracker-coi-method-modal-peer" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa fa-info-circle me-1" aria-hidden="true"></i> {{#str}}coi_method_peer_title, gradereport_coifish{{/str}}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>{{#str}}coi_method_peer_desc, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_signals_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_peer_signals, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_levels_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_levels_desc, gradereport_coifish{{/str}}</p>
+                    <div class="alert alert-secondary small py-2 mb-0">
+                        <i class="fa fa-book me-1" aria-hidden="true"></i>
+                        {{#str}}coi_method_cite, gradereport_coifish{{/str}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{! Cognitive Presence methodology modal }}
+    <div class="modal fade" id="gradetracker-coi-method-modal-cognitive" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa fa-info-circle me-1" aria-hidden="true"></i> {{#str}}coi_method_cognitive_title, gradereport_coifish{{/str}}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>{{#str}}coi_method_cognitive_desc, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_signals_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_cognitive_signals, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_levels_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_levels_desc, gradereport_coifish{{/str}}</p>
+                    <div class="alert alert-secondary small py-2 mb-0">
+                        <i class="fa fa-book me-1" aria-hidden="true"></i>
+                        {{#str}}coi_method_cite, gradereport_coifish{{/str}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{! Teaching Presence methodology modal }}
+    <div class="modal fade" id="gradetracker-coi-method-modal-teaching" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa fa-info-circle me-1" aria-hidden="true"></i> {{#str}}coi_method_teaching_title, gradereport_coifish{{/str}}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>{{#str}}coi_method_teaching_desc, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_signals_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_teaching_signals, gradereport_coifish{{/str}}</p>
+                    <h6 class="fw-bold mt-3">{{#str}}coi_method_levels_title, gradereport_coifish{{/str}}</h6>
+                    <p>{{#str}}coi_method_levels_desc, gradereport_coifish{{/str}}</p>
+                    <div class="alert alert-secondary small py-2 mb-0">
+                        <i class="fa fa-book me-1" aria-hidden="true"></i>
+                        {{#str}}coi_method_cite, gradereport_coifish{{/str}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 {{/coi.haswidgets}}

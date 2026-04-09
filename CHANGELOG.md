@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.2] - 2026-04-09
+
+### Changed
+- **Social presence metric rewritten** — Now a multi-signal composite: forum breadth (60%) and volume (40%) for forum engagement, plus BigBlueButton attendance (20%), collaborative activities (15%), and peer messaging (15%). Weights redistribute when BBB is not installed.
+- **Group-aware forum metrics** — Forum group modes (separate groups, visible groups) are now respected. Students in separate groups are only measured against discussions visible to them, preventing artificial deflation of social presence scores.
+- **Running average in summary table** — New column showing weighted running average based on graded items only, alongside the existing marks achieved percentage.
+- **Running averages in cohort analytics** — Risk quadrant, sociogram, grade distribution, and all cohort insights now use running averages instead of marks achieved, giving a realistic picture early in a course.
+- All social presence calculations aligned across the plugin: student widget, cohort cards, cross-group comparison, cross-teacher comparison, compound risk detection, risk quadrant engagement index, and intervention snapshots all use the same composite methodology.
+- Updated diagnostic text, methodology descriptions, and prescriptive recommendations to reflect multi-signal social presence composite.
+
 ## [2.4.1] - 2026-04-08
 
 ### Changed

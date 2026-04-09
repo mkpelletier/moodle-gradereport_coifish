@@ -198,11 +198,28 @@ class log_intervention extends external_api {
         );
         $engagement = $totalactivities > 0 ? min(100, round(($engaged / $totalactivities) * 100)) : 0;
 
-        // Social presence: forum thread participation rate.
-        $totaldiscussions = (int)$DB->count_records_sql(
-            "SELECT COUNT(fd.id) FROM {forum_discussions} fd WHERE fd.course = :cid",
-            ['cid' => $courseid]
+        // Social presence: group-aware composite of forum breadth and volume.
+        $alldiscussions = $DB->get_records_sql(
+            "SELECT fd.id, fd.groupid, cm.groupmode
+               FROM {forum_discussions} fd
+               JOIN {forum} f ON f.id = fd.forum
+               JOIN {course_modules} cm ON cm.instance = f.id AND cm.course = :cid
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'forum'
+              WHERE fd.course = :cid2",
+            ['cid' => $courseid, 'cid2' => $courseid]
         );
+        $usergroups = groups_get_user_groups($courseid, $studentid);
+        $mygroupids = $usergroups[0] ?? [];
+        $visiblediscussions = 0;
+        foreach ($alldiscussions as $disc) {
+            if ((int)$disc->groupmode === SEPARATEGROUPS) {
+                if ((int)$disc->groupid === -1 || in_array((int)$disc->groupid, $mygroupids)) {
+                    $visiblediscussions++;
+                }
+            } else {
+                $visiblediscussions++;
+            }
+        }
         $threads = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT fd.id)
                FROM {forum_posts} fp
@@ -210,7 +227,18 @@ class log_intervention extends external_api {
               WHERE fd.course = :cid AND fp.userid = :uid",
             ['cid' => $courseid, 'uid' => $studentid]
         );
-        $social = $totaldiscussions > 0 ? min(100, round(($threads / $totaldiscussions) * 100)) : 0;
+        $postcount = (int)$DB->count_records_sql(
+            "SELECT COUNT(fp.id)
+               FROM {forum_posts} fp
+               JOIN {forum_discussions} fd ON fd.id = fp.discussion
+              WHERE fd.course = :cid AND fp.userid = :uid",
+            ['cid' => $courseid, 'uid' => $studentid]
+        );
+        $breadth = $visiblediscussions > 0
+            ? min(100, round(($threads / $visiblediscussions) * 200))
+            : ($threads > 0 ? 50 : 0);
+        $volume = min(100, round($postcount / 5 * 100));
+        $social = round($breadth * 0.6 + $volume * 0.4);
 
         // Feedback review percentage.
         $totalfeedback = (int)$DB->count_records_sql(

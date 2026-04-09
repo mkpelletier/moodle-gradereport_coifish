@@ -847,6 +847,13 @@
     flex: 1 1 160px;
     max-width: 220px;
     border-left: 3px solid #dee2e6;
+    position: relative;
+}
+
+.gradetracker-coi-method-link {
+    margin-top: 0.5rem;
+    text-align: center;
+    font-size: 0.75rem;
 }
 
 /* COI level badge. */
