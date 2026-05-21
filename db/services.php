@@ -32,4 +32,11 @@ $functions = [
         'ajax' => true,
         'capabilities' => 'gradereport/coifish:intervene',
     ],
+    'gradereport_coifish_dispatch_intervention' => [
+        'classname' => 'gradereport_coifish\external\dispatch_intervention',
+        'description' => 'Send a message or post an announcement and auto-log the intervention.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'gradereport/coifish:intervene',
+    ],
 ];

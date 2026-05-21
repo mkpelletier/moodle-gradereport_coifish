@@ -288,7 +288,7 @@ define('gradereport_coifish/sociogram', [], function() {
                     g.appendChild(text);
                 }
                 // Hover tooltip.
-                g.addEventListener('mouseenter', function(ev) {
+                g.addEventListener('mouseenter', function() {
                     var gradeStr = node.grade !== null && node.grade !== undefined ? node.grade + '%' : '–';
                     tooltip.textContent = '';
                     var strong = document.createElement('strong');
@@ -299,8 +299,27 @@ define('gradereport_coifish/sociogram', [], function() {
                     tooltip.appendChild(document.createElement('br'));
                     tooltip.appendChild(document.createTextNode(labelPosts + ': ' + node.posts));
                     tooltip.style.display = 'block';
-                    tooltip.style.left = ev.offsetX + 12 + 'px';
-                    tooltip.style.top = ev.offsetY - 10 + 'px';
+
+                    // Anchor the tooltip to the node centre in container coords —
+                    // event.offsetX/Y vary across browsers for SVG children, but
+                    // getBoundingClientRect is consistent. Then flip horizontally
+                    // and/or vertically when the tooltip would overflow the
+                    // container (overflow:hidden would otherwise clip it).
+                    var nodeRect = g.getBoundingClientRect();
+                    var containerRect = container.getBoundingClientRect();
+                    var cx = nodeRect.left - containerRect.left + nodeRect.width / 2;
+                    var cy = nodeRect.top - containerRect.top + nodeRect.height / 2;
+                    var offset = 12;
+                    tooltip.style.left = (cx + offset) + 'px';
+                    tooltip.style.top = (cy - offset) + 'px';
+
+                    var tipRect = tooltip.getBoundingClientRect();
+                    if (tipRect.right > containerRect.right) {
+                        tooltip.style.left = Math.max(0, cx - tipRect.width - offset) + 'px';
+                    }
+                    if (tipRect.bottom > containerRect.bottom) {
+                        tooltip.style.top = Math.max(0, cy - tipRect.height - offset) + 'px';
+                    }
                 });
                 g.addEventListener('mouseleave', function() {
                     tooltip.style.display = 'none';

@@ -299,6 +299,7 @@
                                         data-diagnostictype="{{diagnostictype}}"
                                         data-scope="cohort"
                                         data-cardtitle="{{title}}"
+                                        data-tpl-family="{{tplfamily}}"
                                         data-students="{{studentsjson}}">
                                     <i class="fa fa-clipboard me-1" aria-hidden="true"></i>{{#str}}intervention_log_btn, gradereport_coifish{{/str}}
                                 </button>
@@ -447,31 +448,45 @@
                 <p class="text-muted small mb-2">
                     {{#str}}cohort_atrisk_desc, gradereport_coifish{{/str}}
                 </p>
-                <table class="table table-sm table-bordered table-hover gradetracker-atrisk-table">
+                <table class="table table-sm table-bordered table-hover gradetracker-atrisk-table gradetracker-sortable-table" data-sortable="true">
                     <thead class="table-light">
                         <tr>
-                            <th>{{#str}}student, gradereport_coifish{{/str}}</th>
-                            <th>{{#str}}coursetotal, gradereport_coifish{{/str}}</th>
-                            <th>{{#str}}cohort_sp_title, gradereport_coifish{{/str}}</th>
-                            <th>{{#str}}cohort_cp_title, gradereport_coifish{{/str}}</th>
-                            <th>{{#str}}cohort_tp_title, gradereport_coifish{{/str}}</th>
-                            <th>{{#str}}cohort_atrisk_concerns, gradereport_coifish{{/str}}</th>
+                            <th class="gradetracker-sortable" data-sortkey="fullname" data-sorttype="text">{{#str}}student, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            <th class="gradetracker-sortable" data-sortkey="groupnames" data-sorttype="text">{{#str}}cohort_crossgroup_group, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            <th class="gradetracker-sortable" data-sortkey="percentage" data-sorttype="number">{{#str}}coursetotal, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            <th class="gradetracker-sortable" data-sortkey="splevel" data-sorttype="number">{{#str}}cohort_sp_title, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            <th class="gradetracker-sortable" data-sortkey="cplevel" data-sorttype="number">{{#str}}cohort_cp_title, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            <th class="gradetracker-sortable" data-sortkey="tplevel" data-sorttype="number">{{#str}}cohort_tp_title, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            {{#showmissedcolumn}}
+                                <th class="gradetracker-sortable text-center" data-sortkey="missedcount" data-sorttype="number">{{#str}}cohort_atrisk_missed, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            {{/showmissedcolumn}}
+                            {{#showextensionscolumn}}
+                                <th class="gradetracker-sortable text-center" data-sortkey="extensionscount" data-sorttype="number">{{#str}}cohort_atrisk_extensions, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
+                            {{/showextensionscolumn}}
+                            <th class="gradetracker-sortable" data-sortkey="flaglist" data-sorttype="text">{{#str}}cohort_atrisk_concerns, gradereport_coifish{{/str}} <i class="fa fa-sort gradetracker-sort-icon text-muted small" aria-hidden="true"></i></th>
                         </tr>
                     </thead>
                     <tbody>
                         {{#atrisk}}
                             <tr>
-                                <td>
+                                <td data-sortvalue="{{fullname}}">
                                     <a href="{{viewurl}}" data-bs-toggle="tooltip" title="{{#str}}cohort_atrisk_drilldown, gradereport_coifish{{/str}}">
                                         {{fullname}}
                                         <i class="fa fa-external-link fa-fw small text-muted" aria-hidden="true"></i>
                                     </a>
                                 </td>
-                                <td>{{percentage}}</td>
-                                <td><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{spclass}}">{{splevel}}</span></td>
-                                <td><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{cpclass}}">{{cplevel}}</span></td>
-                                <td><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{tpclass}}">{{tplevel}}</span></td>
-                                <td class="small text-muted">{{flaglist}}</td>
+                                <td class="small text-muted" data-sortvalue="{{groupnames}}">{{groupnames}}</td>
+                                <td data-sortvalue="{{percentage_raw}}">{{percentage}}</td>
+                                <td data-sortvalue="{{splevel_raw}}"><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{spclass}}">{{splevel}}</span></td>
+                                <td data-sortvalue="{{cplevel_raw}}"><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{cpclass}}">{{cplevel}}</span></td>
+                                <td data-sortvalue="{{tplevel_raw}}"><span class="badge gradetracker-coi-level-badge gradetracker-coi-level-{{tpclass}}">{{tplevel}}</span></td>
+                                {{#showmissedcolumn}}
+                                    <td class="text-center" data-sortvalue="{{missedcount}}">{{missedcount}}</td>
+                                {{/showmissedcolumn}}
+                                {{#showextensionscolumn}}
+                                    <td class="text-center" data-sortvalue="{{extensionscount}}">{{extensionscount}}</td>
+                                {{/showextensionscolumn}}
+                                <td class="small text-muted" data-sortvalue="{{flaglist}}">{{flaglist}}</td>
                             </tr>
                         {{/atrisk}}
                     </tbody>
@@ -615,8 +630,9 @@
     {{> gradereport_coifish/intervention_modal}}
 
     {{#js}}
-        require(['gradereport_coifish/intervention'], function(mod) {
+        require(['gradereport_coifish/intervention', 'gradereport_coifish/sortable_table'], function(mod, sortable) {
             mod.init();
+            sortable.init();
         });
     {{/js}}
 {{/hasdata}}

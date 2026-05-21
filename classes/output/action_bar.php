@@ -89,45 +89,51 @@ class action_bar implements renderable, templatable {
         $data = new \stdClass();
         $course = get_course($this->courseid);
 
-        // Group selector — only if groups are enabled in the course.
+        // Group selector — appears whenever the course has any groups defined,
+        // regardless of $course->groupmode. Moodle's NOGROUPS only disables
+        // group separation on activities; groups can still exist as a tool
+        // for tutorial cohorts, marking pools, etc. The CoIFish report uses
+        // them purely as a filter, so groupmode shouldn't gate visibility.
         $data->hasgroups = false;
         $canviewallgroups = has_capability('gradereport/coifish:viewallgroups', $this->context);
-        if ($course->groupmode != NOGROUPS) {
-            if ($canviewallgroups) {
-                $groups = groups_get_all_groups($this->courseid, 0, $course->defaultgroupingid);
-            } else {
-                $groups = groups_get_all_groups($this->courseid, $USER->id, $course->defaultgroupingid);
-            }
+        if ($canviewallgroups) {
+            $groups = groups_get_all_groups($this->courseid, 0, $course->defaultgroupingid);
+        } else {
+            $groups = groups_get_all_groups($this->courseid, $USER->id, $course->defaultgroupingid);
+        }
 
-            if (!empty($groups)) {
-                $data->hasgroups = true;
-                $data->groups = [];
-                $defaultlabel = $canviewallgroups
-                    ? get_string('allparticipants')
-                    : get_string('allmygroups', 'gradereport_coifish');
+        if (!empty($groups)) {
+            $data->hasgroups = true;
+            $data->groups = [];
+            $defaultlabel = $canviewallgroups
+                ? get_string('allparticipants')
+                : get_string('allmygroups', 'gradereport_coifish');
+            $data->groups[] = [
+                'groupid' => 0,
+                'groupname' => $defaultlabel,
+                'selected' => ($this->groupid == 0),
+            ];
+            foreach ($groups as $group) {
                 $data->groups[] = [
-                    'groupid' => 0,
-                    'groupname' => $defaultlabel,
-                    'selected' => ($this->groupid == 0),
+                    'groupid' => $group->id,
+                    'groupname' => format_string($group->name),
+                    'selected' => ($this->groupid == $group->id),
                 ];
-                foreach ($groups as $group) {
-                    $data->groups[] = [
-                        'groupid' => $group->id,
-                        'groupname' => format_string($group->name),
-                        'selected' => ($this->groupid == $group->id),
-                    ];
-                }
             }
         }
 
         // User selector — scoped to the viewer's effective group membership.
+        // $onlyactive=true so suspended/withdrawn students don't appear in the dropdown.
         if ($this->groupid > 0) {
             $enrolledusers = get_enrolled_users(
                 $this->context,
                 'moodle/course:isincompletionreports',
                 $this->groupid,
                 'u.*',
-                'u.lastname, u.firstname'
+                'u.lastname, u.firstname',
+                0,
+                0,
+                true
             );
         } else if ($canviewallgroups) {
             $enrolledusers = get_enrolled_users(
@@ -135,7 +141,10 @@ class action_bar implements renderable, templatable {
                 'moodle/course:isincompletionreports',
                 0,
                 'u.*',
-                'u.lastname, u.firstname'
+                'u.lastname, u.firstname',
+                0,
+                0,
+                true
             );
         } else {
             $usergroups = groups_get_user_groups($this->courseid, $USER->id);
@@ -147,7 +156,10 @@ class action_bar implements renderable, templatable {
                     'moodle/course:isincompletionreports',
                     $gid,
                     'u.*',
-                    'u.lastname, u.firstname'
+                    'u.lastname, u.firstname',
+                    0,
+                    0,
+                    true
                 );
                 foreach ($members as $uid => $user) {
                     if (!isset($enrolledusers[$uid])) {
@@ -157,10 +169,16 @@ class action_bar implements renderable, templatable {
             }
         }
 
+        // Default option label reflects scope: cap holders see "All participants",
+        // group-scoped viewers see "All my students" so the dropdown doesn't claim
+        // to list participants the viewer isn't actually allowed to see.
+        $allusersinscopelabel = $canviewallgroups
+            ? get_string('allparticipants')
+            : get_string('allmystudents', 'gradereport_coifish');
         $data->users = [];
         $data->users[] = [
             'userid' => 0,
-            'fullname' => get_string('allparticipants'),
+            'fullname' => $allusersinscopelabel,
             'selected' => ($this->userid == 0),
         ];
         foreach ($enrolledusers as $user) {

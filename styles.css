@@ -983,7 +983,7 @@
 /* ── Teacher Insights view ── */
 
 .gradetracker-insights {
-    max-width: 720px;
+    max-width: 900px;
     margin-left: auto;
     margin-right: auto;
 }
@@ -1817,4 +1817,17 @@
 }
 .gradetracker-levels-label-text {
     color: #6c757d;
+}
+
+/* Sortable-table styling: subtle hover hint + brighter chevron once a column is active. */
+.gradetracker-sortable-table th.gradetracker-sortable {
+    user-select: none;
+}
+.gradetracker-sortable-table th.gradetracker-sortable:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+.gradetracker-sortable-table th[data-sortdir] .gradetracker-sort-icon.gradetracker-sort-icon {
+    /* Higher-specificity selector so we can drop the !important previously needed
+       to win over .text-muted in the same FA icon — stylelint rejects !important. */
+    color: #495057;
 }

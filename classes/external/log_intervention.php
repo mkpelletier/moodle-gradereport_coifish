@@ -108,7 +108,7 @@ class log_intervention extends external_api {
         // For cohort-scope interventions with no specific students, use all enrolled students.
         $studentids = $params['studentids'];
         if (empty($studentids) && $params['scope'] === 'cohort') {
-            $enrolled = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id');
+            $enrolled = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id', null, 0, 0, true);
             $studentids = array_keys($enrolled);
         }
 
@@ -246,18 +246,17 @@ class log_intervention extends external_api {
               WHERE a.course = :cid AND ag.userid = :uid AND ag.grade >= 0",
             ['cid' => $courseid, 'uid' => $studentid]
         );
+        [$evsql, $evparams] = \gradereport_coifish\report::get_feedback_view_event_sql('fve');
         $viewedfeedback = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT l.contextinstanceid)
                FROM {logstore_standard_log} l
               WHERE l.userid = :uid AND l.courseid = :cid
-                AND l.eventname IN (:ev1, :ev2)
+                AND l.eventname $evsql
                 AND l.timecreated > :mintime",
-            [
+            array_merge([
                 'uid' => $studentid, 'cid' => $courseid,
-                'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                'ev2' => '\\mod_assign\\event\\submission_status_viewed',
                 'mintime' => $mintime,
-            ]
+            ], $evparams)
         );
         $feedbackpct = $totalfeedback > 0 ? min(100, round(($viewedfeedback / $totalfeedback) * 100)) : null;
 

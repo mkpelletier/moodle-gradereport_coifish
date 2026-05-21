@@ -1,5 +1,44 @@
 # Changelog
 
+## [2.6.0] - 2026-05-20
+
+### Added
+- **Active intervention launchers** — three actions in the intervention dialog now perform the action AND auto-log the intervention in one round trip:
+  - *Send personal / group message* dispatches through the institution's configured default messaging channel (Moodle core, SATS Mail, or Local Mail) with one personalised copy per recipient.
+  - *Send feedback reminder* uses the same dispatch flow with a feedback-specific template family.
+  - *Post course announcement* posts a new discussion to the course's Announcements (News) forum on the cohort's behalf.
+  - All four are grouped under a new "Send and log" optgroup at the top of the action dropdown; passive (record-only) action types sit beneath in a "Record only" group.
+- **Student-facing message + announcement templates** — nine diagnostic-family templates (`missing`, `engagement`, `stale`, `feedback`, `performance`, `selfreg`, `timing`, `extensions`, `generic`) × `message` and `announcement` variants. The composer pre-fills with warm, personal copy that addresses the student directly — no analytics text, counts, percentages, or research citations leak into the message body. Bodies use `{firstname}` which the dispatcher substitutes per recipient.
+- **Unified Grader integration** in the feedback metrics. The teacher feedback-quality task now counts submission comments (`local_unifiedgrader_scomm`), annotations (`local_unifiedgrader_annot`), and per-attempt quiz feedback (`local_unifiedgrader_qfb`) as feedback signals — including for forum, quiz, and BBB activities that have no native feedback table. The student-side feedback-review metric counts the new `\local_unifiedgrader\event\feedback_viewed` event alongside the native `mod_assign` events. All UG queries are gated by the admin's per-activity-type `enable_<modname>` settings AND `table_exists()` so installs without UG are unaffected.
+- **Missed-deadline diagnostic** at cohort and per-student level. Counts past-due assessments (assign / quiz / graded forum) that the student hasn't submitted and doesn't hold a user or group override on. Surfaces as a new risk flag in the at-risk pipeline, a sortable "Missed" column on the at-risk table, a `cohort_missed` diagnostic card (triggered at ≥3 students or ≥15% of cohort at normal sensitivity), and a `missed_deadlines` card on per-student insights that lists the activities by name. A companion `cohort_extensions` card flags students with chronic deadline overrides (≥3 user-level extensions at normal sensitivity).
+- **Group filters on cohort overview**. Group dropdown now appears whenever a course has any groups defined, regardless of `$course->groupmode` (Moodle's NOGROUPS only disables activity separation; groups can still exist as a tool for tutorial cohorts, marking pools, etc.).
+- **Group memberships on the single-student report header** — group badges sit beside the student's name in the teacher view, visible across all sub-views (table, progress, insights).
+- **Group column + sortable headers on "Students requiring attention"**. New generic `sortable_table.js` AMD module — any `<table data-sortable="true">` with `<th class="gradetracker-sortable" data-sorttype="text|number">` picks up click-to-sort with stable ordering. Numeric sort honors `data-sortvalue` so percentages and badge labels sort by their underlying value, not their displayed text.
+
+### Changed
+- **Withdrawn / suspended enrolments are now excluded from the live report** (group dropdown, user dropdown, summary table, cohort insights, cross-group comparison, coordinator tab, intervention recipient lists, feedback-metrics task). Every `get_enrolled_users()` call passes `$onlyactive=true`. Longitudinal data in `local_coifish` continues to capture snapshots taken while the student was active.
+- **Cross-group teacher comparison now respects every configured messaging source.** Previously it queried Moodle core `{messages}` directly, missing teachers who communicate primarily via SATS Mail or Local Mail. Now routes through the existing `query_messaging_source()` helper.
+- Engagement-metric denominator in cohort insights, the at-risk modal, intervention snapshots, and `local_coifish` longitudinal snapshots now subtracts optional assignments/quizzes that the category's drop/keep rule discards.
+
+### Fixed
+- **Group-filter gating leak**: a teacher without `gradereport/coifish:viewallgroups` who wasn't in any course group was being shown the entire course roster because `get_scoped_groupids()` returned `[]` for both the cap-holder "show everyone" case and the no-cap-no-group "show nobody" case. Added `has_unconstrained_view()` so the caller can distinguish, and `get_scoped_enrolled_users()` now returns an empty set when the viewer has no capability AND no groups.
+- The user-dropdown default option now reads "All my students" for group-scoped viewers (was misleadingly fixed to "All participants").
+- **Sociogram tooltip on edge nodes** was being clipped by the container's `overflow: hidden`. Tooltip now anchors via `getBoundingClientRect()` (consistent across browsers) and flips horizontally/vertically when it would overflow.
+- `fullname()` debug notice (missing `firstnamephonetic`, `lastnamephonetic`, `middlename`, `alternatename`) in the intervention button label, intervention history teacher name, and coordinator escalation list. All three now use `\core_user\fields::for_name()->get_required_fields()`.
+- `intervention_action_announcement_posted` lang string was missing — the intervention history view rendered `[[…]]` for any logged announcement.
+- `local_satsmail\message_data::__construct()` is private; the dispatcher now uses the `::new($course, $sender)` factory. Same fix applied to the `local_mail` path.
+- **Lecturer feedback metric misreporting** when teachers feedback via Unified Grader / multimedia. Several related fixes:
+  - **Multimedia feedback now counts.** Voice notes, screencasts, embedded video, and Loom/YouTube/Vimeo/BBB links in feedback text are detected via pattern matching (`<audio>`, `<video>`, `<iframe>`, `.mp3`/`.mp4`/etc) and credited with a full 3/3 quality score and an 80-word floor, since AI text assessment cannot evaluate them.
+  - **"Written feedback" relabelled "Feedback coverage"** — the metric now aggregates written *and* multimedia feedback, so the old name was misleading.
+  - **Coverage exceeding 100% bug**: `UNION ALL` over assign-submission feedback, editpdf comments, file annotations, gradebook overall-feedback, and UG submission/annotation/quiz signals was double-counting graded items that had feedback in multiple channels. Numerator and denominator are now `UNION`-distinct over `(modname, instanceid, userid)` tuples.
+  - **Module-type filter for feedback-relevant activities.** New `get_feedback_relevant_modnames()` filters both numerator and denominator to `assign / forum / quiz / lesson / workshop / bigbluebuttonbn / data`, so auto-graded LTI and SCORM items no longer drag coverage down.
+  - **Gradebook overall-feedback signals** (`grade_grades.feedback`) on non-assign items are now harvested for both feedback-quality analysis and signal counting — this is where UG-on-forum feedback lands.
+  - **Student feedback-review denominator** broadened to match (same module-type filter), and the event list now includes `\gradereport_user\event\grade_report_viewed` so a student opening their gradebook counts as a feedback view.
+  - **Grade-turnaround broadened** to `UNION` across assign / forum / quiz (previously assign only), so courses where grading happens in forums/quizzes report a real turnaround instead of `-`.
+  - **BBB session count broadened** — the coordinator-tab BBB count was filtering log rows by `log = 'Create'`, which excluded most BBB activities. Now counts BBB activities unconditionally.
+  - **Named-parameter SQL inflation** in `get_ug_nonassign_signals()` — Moodle expands `:name` to positional `?` per occurrence, and a reused `IN()` clause across UNION branches inflated the expected parameter count (`Expected 15, got 8`). Each branch now mints its own IN clause with a unique prefix (`ugtsc`, `ugtan`, `ugmsc`, `ugman`, `ugtqf`).
+- **Orphan top-level grade items now display in the student report.** Assessments sitting at course root (not inside a subcategory) — e.g. a standalone final exam — were previously hidden. They now appear as their own cards in both the table view and the progress view, each card showing the item's own name and its course-relative weight (so a 60%-weighted final exam reads as a dedicated 60% card rather than being lumped into a "course-level assessments" wrapper).
+
 ## [2.5.2] - 2026-05-19
 
 ### Added

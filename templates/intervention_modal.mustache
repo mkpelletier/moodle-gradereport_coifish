@@ -14,7 +14,13 @@
 <div class="modal fade" id="gradetracker-intervention-modal" tabindex="-1" aria-hidden="true"
      data-msg-noaction="{{#str}}intervention_error_noaction, gradereport_coifish{{/str}}"
      data-msg-success="{{#str}}intervention_modal_success, gradereport_coifish{{/str}}"
-     data-msg-nostudent="{{#str}}intervention_error_nostudent, gradereport_coifish{{/str}}">
+     data-msg-success-sent="{{#str}}intervention_modal_success_sent, gradereport_coifish{{/str}}"
+     data-msg-success-posted="{{#str}}intervention_modal_success_posted, gradereport_coifish{{/str}}"
+     data-msg-nostudent="{{#str}}intervention_error_nostudent, gradereport_coifish{{/str}}"
+     data-msg-nocomposer="{{#str}}intervention_error_nocomposer, gradereport_coifish{{/str}}"
+     data-composer-hint-message="{{#str}}intervention_composer_hint_message, gradereport_coifish, {{messagingsourcelabel}}{{/str}}"
+     data-composer-hint-announcement="{{#str}}intervention_composer_hint_announcement, gradereport_coifish{{/str}}"
+     data-templates="{{interventiontemplatesjson}}">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -52,18 +58,23 @@
                     </label>
                     <select class="form-select" id="intv-actiontype">
                         <option value="">{{#str}}intervention_modal_action_select, gradereport_coifish{{/str}}</option>
-                        <option value="message_student" data-scope="individual">{{#str}}intervention_action_message_student, gradereport_coifish{{/str}}</option>
-                        <option value="message_group" data-scope="both">{{#str}}intervention_action_message_group, gradereport_coifish{{/str}}</option>
-                        <option value="meeting_scheduled" data-scope="individual">{{#str}}intervention_action_meeting_scheduled, gradereport_coifish{{/str}}</option>
-                        <option value="peer_pairing" data-scope="individual">{{#str}}intervention_action_peer_pairing, gradereport_coifish{{/str}}</option>
-                        <option value="discussion_prompt" data-scope="both">{{#str}}intervention_action_discussion_prompt, gradereport_coifish{{/str}}</option>
-                        <option value="additional_resources" data-scope="both">{{#str}}intervention_action_additional_resources, gradereport_coifish{{/str}}</option>
-                        <option value="feedback_reminder" data-scope="both">{{#str}}intervention_action_feedback_reminder, gradereport_coifish{{/str}}</option>
-                        <option value="deadline_adjustment" data-scope="both">{{#str}}intervention_action_deadline_adjustment, gradereport_coifish{{/str}}</option>
-                        <option value="activity_restructure" data-scope="cohort">{{#str}}intervention_action_activity_restructure, gradereport_coifish{{/str}}</option>
-                        <option value="study_plan" data-scope="individual">{{#str}}intervention_action_study_plan, gradereport_coifish{{/str}}</option>
-                        <option value="referral" data-scope="individual">{{#str}}intervention_action_referral, gradereport_coifish{{/str}}</option>
-                        <option value="custom" data-scope="both">{{#str}}intervention_action_custom, gradereport_coifish{{/str}}</option>
+                        <optgroup label="{{#str}}intervention_actions_active, gradereport_coifish{{/str}}">
+                            <option value="message_student" data-scope="individual" data-kind="message">{{#str}}intervention_action_message_student, gradereport_coifish{{/str}}</option>
+                            <option value="message_group" data-scope="both" data-kind="message">{{#str}}intervention_action_message_group, gradereport_coifish{{/str}}</option>
+                            <option value="feedback_reminder" data-scope="both" data-kind="message" data-tpl-family="feedback">{{#str}}intervention_action_feedback_reminder, gradereport_coifish{{/str}}</option>
+                            <option value="announcement_posted" data-scope="cohort" data-kind="announcement">{{#str}}intervention_action_announcement_posted, gradereport_coifish{{/str}}</option>
+                        </optgroup>
+                        <optgroup label="{{#str}}intervention_actions_record, gradereport_coifish{{/str}}">
+                            <option value="meeting_scheduled" data-scope="individual">{{#str}}intervention_action_meeting_scheduled, gradereport_coifish{{/str}}</option>
+                            <option value="peer_pairing" data-scope="individual">{{#str}}intervention_action_peer_pairing, gradereport_coifish{{/str}}</option>
+                            <option value="discussion_prompt" data-scope="both">{{#str}}intervention_action_discussion_prompt, gradereport_coifish{{/str}}</option>
+                            <option value="additional_resources" data-scope="both">{{#str}}intervention_action_additional_resources, gradereport_coifish{{/str}}</option>
+                            <option value="deadline_adjustment" data-scope="both">{{#str}}intervention_action_deadline_adjustment, gradereport_coifish{{/str}}</option>
+                            <option value="activity_restructure" data-scope="cohort">{{#str}}intervention_action_activity_restructure, gradereport_coifish{{/str}}</option>
+                            <option value="study_plan" data-scope="individual">{{#str}}intervention_action_study_plan, gradereport_coifish{{/str}}</option>
+                            <option value="referral" data-scope="individual">{{#str}}intervention_action_referral, gradereport_coifish{{/str}}</option>
+                            <option value="custom" data-scope="both">{{#str}}intervention_action_custom, gradereport_coifish{{/str}}</option>
+                        </optgroup>
                     </select>
                 </div>
 
@@ -71,6 +82,22 @@
                 <div class="mb-3 d-none" id="intv-custom-container">
                     <input type="text" class="form-control" id="intv-customaction"
                            placeholder="Describe the action taken...">
+                </div>
+
+                {{! Composer — shown when the selected action is message or announcement.
+                    Submitting the form both performs the action (sends via the
+                    configured messaging source, or posts to the Announcements
+                    forum) AND auto-logs the intervention in one round trip. }}
+                <div class="mb-3 d-none" id="intv-composer-container">
+                    <div class="alert alert-info py-2 px-3 small mb-2" id="intv-composer-hint"></div>
+                    <label class="form-label fw-bold" for="intv-subject">
+                        {{#str}}intervention_modal_subject, gradereport_coifish{{/str}}
+                    </label>
+                    <input type="text" class="form-control mb-2" id="intv-subject" maxlength="255">
+                    <label class="form-label fw-bold" for="intv-body">
+                        {{#str}}intervention_modal_body, gradereport_coifish{{/str}}
+                    </label>
+                    <textarea class="form-control" id="intv-body" rows="6"></textarea>
                 </div>
 
                 {{! Notes }}

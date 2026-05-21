@@ -36,11 +36,15 @@ const openModal = ($btn) => {
     const diagnostictype = $btn.attr('data-diagnostictype') || '';
     const scope = $btn.attr('data-scope') || 'individual';
     const cardtitle = $btn.attr('data-cardtitle') || '';
+    const tplfamily = $btn.attr('data-tpl-family') || 'generic';
     const studentsjson = $btn.attr('data-students') || '[]';
 
     $('#intv-diagnostictype').val(diagnostictype);
     $('#intv-scope').val(scope);
     $('#intv-diagnostic-context').text(cardtitle);
+    // Default template family for this card — overridden when the user picks
+    // an action that declares its own data-tpl-family (e.g. feedback_reminder).
+    $modal.attr('data-card-tpl-family', tplfamily);
 
     let students = [];
     try {
@@ -87,12 +91,104 @@ const openModal = ($btn) => {
     $('#intv-customaction').val('');
     $('#intv-notes').val('');
     $('#intv-custom-container').addClass('d-none');
+    $('#intv-composer-container').addClass('d-none');
+    $('#intv-subject').val('');
+    $('#intv-body').val('');
 
     $modal.modal('show');
 };
 
 /**
+ * Look up a pre-rendered template from the modal's data-templates JSON.
+ *
+ * @param {string} kind 'message' or 'announcement'
+ * @param {string} family Template family key, e.g. 'missing', 'feedback'.
+ * @returns {{subject: string, body: string}|null}
+ */
+const lookupTemplate = (kind, family) => {
+    try {
+        const all = JSON.parse($modal.attr('data-templates') || '{}');
+        if (all && all[kind] && all[kind][family]) {
+            return all[kind][family];
+        }
+        if (all && all[kind] && all[kind].generic) {
+            return all[kind].generic;
+        }
+    } catch (e) {
+        // Fall through.
+    }
+    return null;
+};
+
+/**
+ * Pre-fill the composer for the selected action. Resolution order for the
+ * template family: action-option data-tpl-family override, then the diagnostic
+ * card's data-tpl-family captured when the modal was opened, then 'generic'.
+ *
+ * Bodies use a {firstname} placeholder which the backend dispatcher swaps per
+ * recipient. For individual scope with one named recipient, we substitute
+ * client-side as well so the teacher sees the rendered greeting while editing.
+ *
+ * @param {string} kind 'message' or 'announcement'.
+ * @param {string} family Template family key.
+ */
+const fillComposerTemplate = (kind, family) => {
+    const tpl = lookupTemplate(kind, family);
+    if (!tpl) {
+        return;
+    }
+    const scope = $('#intv-scope').val();
+    let body = tpl.body;
+    if (scope === 'individual') {
+        const $singleName = $modal.find('.intv-student-id').first();
+        if ($singleName.length) {
+            const firstname = $singleName.parent().text().trim().split(/\s+/)[0] || '';
+            if (firstname) {
+                body = body.replace(/{firstname}/g, firstname);
+            }
+        }
+    }
+    $('#intv-subject').val(tpl.subject);
+    $('#intv-body').val(body);
+};
+
+/**
+ * Toggle the composer visibility based on the selected action.
+ */
+const refreshComposer = () => {
+    const $opt = $('#intv-actiontype option:selected');
+    const kind = $opt.attr('data-kind') || '';
+    const $composer = $('#intv-composer-container');
+    const $hint = $('#intv-composer-hint');
+
+    if (kind !== 'message' && kind !== 'announcement') {
+        $composer.addClass('d-none');
+        return;
+    }
+
+    // Action-type family override (e.g. feedback_reminder → 'feedback') takes
+    // priority; otherwise use the diagnostic card's family.
+    const family = $opt.attr('data-tpl-family')
+        || $modal.attr('data-card-tpl-family')
+        || 'generic';
+
+    $hint.text($modal.attr(kind === 'message'
+        ? 'data-composer-hint-message'
+        : 'data-composer-hint-announcement') || '');
+    $composer.removeClass('d-none');
+
+    // Only auto-fill if the teacher hasn't started typing.
+    if (!$('#intv-subject').val() && !$('#intv-body').val()) {
+        fillComposerTemplate(kind, family);
+    }
+};
+
+/**
  * Submit the intervention via AJAX.
+ *
+ * Branches based on the selected action's data-kind: message and announcement
+ * actions go through `dispatch_intervention` (sends + auto-logs), everything
+ * else goes through the original `log_intervention` (record-only).
  */
 const submitIntervention = () => {
     const courseid = parseInt($('#intv-courseid').val(), 10);
@@ -101,6 +197,8 @@ const submitIntervention = () => {
     const actiontype = $('#intv-actiontype').val();
     const customaction = $('#intv-customaction').val();
     const notes = $('#intv-notes').val();
+    const $opt = $('#intv-actiontype option:selected');
+    const kind = $opt.attr('data-kind') || '';
 
     if (!actiontype) {
         Notification.addNotification({
@@ -129,6 +227,47 @@ const submitIntervention = () => {
     const $submitBtn = $('#intv-submit-btn');
     $submitBtn.prop('disabled', true);
 
+    // Dispatch path: send / post + auto-log.
+    if (kind === 'message' || kind === 'announcement') {
+        const subject = ($('#intv-subject').val() || '').trim();
+        const body = ($('#intv-body').val() || '').trim();
+        if (!subject || !body) {
+            Notification.addNotification({
+                message: $modal.attr('data-msg-nocomposer') || 'Please complete the subject and body.',
+                type: 'error'
+            });
+            $submitBtn.prop('disabled', false);
+            return;
+        }
+        Ajax.call([{
+            methodname: 'gradereport_coifish_dispatch_intervention',
+            args: {
+                courseid: courseid,
+                studentids: studentids,
+                diagnostictype: diagnostictype,
+                scope: scope,
+                actionkind: kind,
+                subject: subject,
+                body: body,
+                notes: notes
+            }
+        }])[0].then((result) => {
+            $modal.modal('hide');
+            const tmpl = kind === 'message'
+                ? ($modal.attr('data-msg-success-sent') || 'Sent and logged.')
+                : ($modal.attr('data-msg-success-posted') || 'Posted and logged.');
+            const msg = tmpl.replace('{count}', String(result.delivered || 0));
+            Notification.addNotification({message: msg, type: 'success'});
+            $submitBtn.prop('disabled', false);
+            return result;
+        }).catch((error) => {
+            Notification.exception(error);
+            $submitBtn.prop('disabled', false);
+        });
+        return;
+    }
+
+    // Record-only path (original behaviour).
     Ajax.call([{
         methodname: 'gradereport_coifish_log_intervention',
         args: {
@@ -169,6 +308,7 @@ export const init = () => {
         } else {
             $('#intv-custom-container').addClass('d-none');
         }
+        refreshComposer();
     });
 
     $(document).on('click', '.gradetracker-log-intervention-btn', function(e) {

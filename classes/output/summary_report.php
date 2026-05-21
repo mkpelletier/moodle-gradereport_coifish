@@ -65,6 +65,16 @@ class summary_report implements renderable, templatable {
         $data->users = $summary;
         $data->usercount = count($summary);
 
+        // The intervention modal partial uses this to label its composer hint
+        // ("Sending via SATS Mail…") — needs to live on the parent context.
+        $data->messagingsourcelabel = \gradereport_coifish\messaging_dispatcher::get_default_source_label();
+        $data->courseid = $this->report->courseid;
+        // Pre-rendered message + announcement templates indexed by family — the
+        // intervention.js composer picks the right family per diagnostic card.
+        $data->interventiontemplatesjson = json_encode(
+            \gradereport_coifish\intervention_templates::get_all_for_client()
+        );
+
         // Gate the insights tab: course override takes precedence over site setting.
         $configkey = 'course_' . $this->report->courseid;
         $raw = get_config('gradereport_coifish', $configkey);

@@ -105,6 +105,93 @@ class report extends \grade_report {
     }
 
     /**
+     * Event names that count as "the student viewed the feedback their teacher wrote".
+     *
+     * - `mod_assign\event\feedback_viewed` / `submission_status_viewed` — student
+     *   opens an assignment's feedback panel.
+     * - `local_unifiedgrader\event\feedback_viewed` — student opens UG's
+     *   feedback-viewer page (forums, quizzes, BBB).
+     * - `gradereport_user\event\grade_report_viewed` — student opens their own
+     *   user grade report. Used as a fallback signal: a student who has viewed
+     *   their grade report has been exposed to whatever feedback the teacher
+     *   left in `grade_grades.feedback` for the modules they were graded on.
+     *   Imperfect (we can't tell *which* feedback they actually read), but a
+     *   strict UG-event-only count materially under-reports for institutions
+     *   whose students consume feedback through the gradebook rather than
+     *   activity pages.
+     *
+     * @return string[]
+     */
+    public static function get_feedback_view_event_names(): array {
+        $events = [
+            '\\mod_assign\\event\\feedback_viewed',
+            '\\mod_assign\\event\\submission_status_viewed',
+            '\\gradereport_user\\event\\grade_report_viewed',
+        ];
+        if (class_exists('\\local_unifiedgrader\\event\\feedback_viewed')) {
+            $events[] = '\\local_unifiedgrader\\event\\feedback_viewed';
+        }
+        return $events;
+    }
+
+    /**
+     * Module types where teacher feedback is a normal expectation.
+     *
+     * Used as the denominator scope for cohort feedback-coverage and feedback-
+     * review metrics so that auto-graded module types (lti external tools,
+     * scorm packages, hotpot, attendance, chat, choice, etc.) don't drag the
+     * percentage down. A course where the teacher leaves perfect feedback on
+     * every forum but uses lti/scorm for skill practice should score 100%
+     * coverage, not be penalised for the auto-graded items.
+     *
+     * Kept narrow and explicit — adding a module here grants institution-wide
+     * visibility into how often it's getting feedback, which is an editorial
+     * call rather than something we infer from data.
+     *
+     * @return string[]
+     */
+    public static function get_feedback_relevant_modnames(): array {
+        return ['assign', 'forum', 'quiz', 'lesson', 'workshop', 'bigbluebuttonbn', 'data'];
+    }
+
+    /**
+     * Activity modnames for which Unified Grader is installed AND configured.
+     *
+     * UG ships adapters for assign, quiz, forum and bigbluebuttonbn but each is
+     * gated by a `local_unifiedgrader/enable_<modname>` admin setting. An institution
+     * may enable UG for assignments only — in which case stale forum/quiz/BBB rows
+     * (left over from a previously-enabled type or test data) should not count.
+     *
+     * Returns [] when UG is not installed at all, or when no activity type is enabled.
+     *
+     * @return string[] Lower-case modnames (e.g. ['assign', 'forum']).
+     */
+    public static function get_unifiedgrader_enabled_modnames(): array {
+        global $DB;
+        if (!$DB->get_manager()->table_exists('local_unifiedgrader_scomm')) {
+            return [];
+        }
+        $enabled = [];
+        foreach (['assign', 'quiz', 'forum', 'bigbluebuttonbn'] as $modname) {
+            if ((bool)get_config('local_unifiedgrader', 'enable_' . $modname)) {
+                $enabled[] = $modname;
+            }
+        }
+        return $enabled;
+    }
+
+    /**
+     * Build an SQL IN clause for the feedback-view event names.
+     *
+     * @param string $prefix Parameter name prefix (must be unique within the query).
+     * @return array{0:string,1:array} [SQL fragment with leading space, params].
+     */
+    public static function get_feedback_view_event_sql(string $prefix = 'fve'): array {
+        global $DB;
+        return $DB->get_in_or_equal(self::get_feedback_view_event_names(), SQL_PARAMS_NAMED, $prefix);
+    }
+
+    /**
      * Count the activities a student is reasonably expected to engage with in a course.
      *
      * Mirrors the engagement-metric activity set (assign, quiz, page, book, resource,
@@ -188,11 +275,16 @@ class report extends \grade_report {
     /**
      * Return the group IDs the current viewer is scoped to for cohort-level queries.
      *
+     * Use {@see has_unconstrained_view()} to distinguish "unconstrained" (cap holder
+     * with no specific group selected) from "no groups at all" (no cap + viewer not
+     * in any group) — both return [], but mean very different things to the caller.
+     *
      * - If a specific group is selected (groupid > 0) and the viewer may see it, returns [groupid].
      * - If groupid == 0 and the viewer has gradereport/coifish:viewallgroups, returns [] (no filter).
-     * - Otherwise returns the IDs of every group the viewer is a member of in this course.
+     * - Otherwise returns the IDs of every group the viewer is a member of in this course
+     *   (which may itself be []).
      *
-     * @return int[] Empty array means "no group filter" (all participants).
+     * @return int[]
      */
     public function get_scoped_groupids(): array {
         global $USER;
@@ -217,10 +309,291 @@ class report extends \grade_report {
     }
 
     /**
+     * Build a userid → "Group A, Group B" map for the given cohort, using a single
+     * query so the at-risk table can show group membership without per-row lookups.
+     *
+     * @param int[] $userids Student user IDs.
+     * @return array Map of userid => formatted comma-separated group names (may be '').
+     */
+    protected function get_cohort_group_names(array $userids): array {
+        global $DB;
+        if (empty($userids)) {
+            return [];
+        }
+        [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'cgn');
+        $rows = $DB->get_records_sql(
+            "SELECT gm.id, gm.userid, g.id AS groupid, g.name
+               FROM {groups_members} gm
+               JOIN {groups} g ON g.id = gm.groupid
+              WHERE g.courseid = :courseid AND gm.userid $insql
+           ORDER BY g.name ASC",
+            array_merge(['courseid' => $this->courseid], $inparams)
+        );
+        $by = [];
+        foreach ($rows as $row) {
+            $by[(int)$row->userid][] = format_string($row->name);
+        }
+        $result = [];
+        foreach ($userids as $uid) {
+            $result[(int)$uid] = isset($by[$uid]) ? implode(', ', $by[$uid]) : '';
+        }
+        return $result;
+    }
+
+    /**
+     * Compute missed-deadline and extension counts per student for the cohort.
+     *
+     * "Missed" = the assessment's due date is in the past, the student has not
+     * submitted, and the student has neither a user override nor a group override
+     * on that item. Items where the student holds any override are excluded from
+     * "missed" entirely — they've been deliberately re-scoped for that student.
+     *
+     * Returns per-student missed counts plus a separate count of user-level
+     * extensions (override rows) so chronic extension-seeking can be flagged.
+     * Covers Moodle's three deadline-bearing module types: assign (duedate),
+     * quiz (timeclose), forum (duedate on graded forums).
+     *
+     * @param int[] $userids Student user IDs.
+     * @return array Map of userid => ['missed' => int, 'missedlist' => string[],
+     *                                  'extensions' => int].
+     */
+    protected function get_cohort_missed_deadlines(array $userids): array {
+        global $DB;
+        $now = $this->effective_now();
+        $out = [];
+        foreach ($userids as $uid) {
+            $out[(int)$uid] = ['missed' => 0, 'missedlist' => [], 'extensions' => 0];
+        }
+        if (empty($userids)) {
+            return $out;
+        }
+        [$uinsql, $uinparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'mdu');
+
+        // Group memberships are needed to honor group overrides.
+        $usergroupids = [];
+        $gmrows = $DB->get_records_sql(
+            "SELECT gm.id, gm.userid, gm.groupid
+               FROM {groups_members} gm
+               JOIN {groups} g ON g.id = gm.groupid
+              WHERE g.courseid = :cid AND gm.userid $uinsql",
+            array_merge(['cid' => $this->courseid], $uinparams)
+        );
+        foreach ($gmrows as $row) {
+            $usergroupids[(int)$row->userid][] = (int)$row->groupid;
+        }
+
+        // Module-by-module: gather past-due items, submission/attempt presence,
+        // user overrides, group overrides. Each branch builds a uniform shape
+        // [moduleinstanceid => name] of past-due items first.
+        $itemsbymod = [
+            'assign' => $this->fetch_pastdue_assigns($now),
+            'quiz' => $this->fetch_pastdue_quizzes($now),
+            'forum' => $this->fetch_pastdue_forums($now),
+        ];
+
+        // Per module, gather submissions / overrides — each keyed [modname][userid][instanceid]
+        // (or [modname][groupid][instanceid] for group overrides) so per-student
+        // counting in the second pass is a constant-time lookup.
+        $haswork = [];
+        $useroverrides = [];
+        $groupoverrides = [];
+        $userextensions = [];
+
+        foreach ($itemsbymod as $modname => $items) {
+            if (empty($items)) {
+                continue;
+            }
+            $iids = array_keys($items);
+            [$iinsql, $iinparams] = $DB->get_in_or_equal($iids, SQL_PARAMS_NAMED, 'md' . substr($modname, 0, 3));
+
+            if ($modname === 'assign') {
+                $rows = $DB->get_records_sql(
+                    "SELECT id, assignment, userid FROM {assign_submission}
+                      WHERE assignment $iinsql AND userid $uinsql AND status = 'submitted'",
+                    array_merge($iinparams, $uinparams)
+                );
+                foreach ($rows as $r) {
+                    $haswork['assign'][(int)$r->userid][(int)$r->assignment] = true;
+                }
+                $ovrows = $DB->get_records_sql(
+                    "SELECT id, assignid, userid, groupid, duedate FROM {assign_overrides}
+                      WHERE assignid $iinsql AND duedate IS NOT NULL",
+                    $iinparams
+                );
+                foreach ($ovrows as $r) {
+                    if ($r->userid) {
+                        $useroverrides['assign'][(int)$r->userid][(int)$r->assignid] = true;
+                        $userextensions[(int)$r->userid][] = $r->id;
+                    } else if ($r->groupid) {
+                        $groupoverrides['assign'][(int)$r->groupid][(int)$r->assignid] = true;
+                    }
+                }
+            } else if ($modname === 'quiz') {
+                $rows = $DB->get_records_sql(
+                    "SELECT id, quiz, userid FROM {quiz_attempts}
+                      WHERE quiz $iinsql AND userid $uinsql AND state IN ('finished', 'abandoned')",
+                    array_merge($iinparams, $uinparams)
+                );
+                foreach ($rows as $r) {
+                    $haswork['quiz'][(int)$r->userid][(int)$r->quiz] = true;
+                }
+                $ovrows = $DB->get_records_sql(
+                    "SELECT id, quiz, userid, groupid, timeclose FROM {quiz_overrides}
+                      WHERE quiz $iinsql AND timeclose IS NOT NULL",
+                    $iinparams
+                );
+                foreach ($ovrows as $r) {
+                    if ($r->userid) {
+                        $useroverrides['quiz'][(int)$r->userid][(int)$r->quiz] = true;
+                        $userextensions[(int)$r->userid][] = $r->id;
+                    } else if ($r->groupid) {
+                        $groupoverrides['quiz'][(int)$r->groupid][(int)$r->quiz] = true;
+                    }
+                }
+            } else if ($modname === 'forum') {
+                // Graded forums: "submission" = posting at least once in the forum.
+                $rows = $DB->get_records_sql(
+                    "SELECT MIN(fp.id) AS id, fd.forum, fp.userid
+                       FROM {forum_posts} fp
+                       JOIN {forum_discussions} fd ON fd.id = fp.discussion
+                      WHERE fd.forum $iinsql AND fp.userid $uinsql
+                   GROUP BY fd.forum, fp.userid",
+                    array_merge($iinparams, $uinparams)
+                );
+                foreach ($rows as $r) {
+                    $haswork['forum'][(int)$r->userid][(int)$r->forum] = true;
+                }
+                // Forums use mod_forum's grading subsystem; no per-instance override
+                // table exists in core, so user/group overrides don't apply.
+            }
+        }
+
+        // Per-user counting.
+        foreach ($userids as $uid) {
+            $uid = (int)$uid;
+            $missed = 0;
+            $missedlist = [];
+            foreach ($itemsbymod as $modname => $items) {
+                foreach ($items as $iid => $name) {
+                    // Skip if student already engaged.
+                    if (!empty($haswork[$modname][$uid][$iid])) {
+                        continue;
+                    }
+                    // Skip if student has a user override on this item.
+                    if (!empty($useroverrides[$modname][$uid][$iid])) {
+                        continue;
+                    }
+                    // Skip if any of the student's groups has a group override.
+                    $skip = false;
+                    foreach ($usergroupids[$uid] ?? [] as $gid) {
+                        if (!empty($groupoverrides[$modname][$gid][$iid])) {
+                            $skip = true;
+                            break;
+                        }
+                    }
+                    if ($skip) {
+                        continue;
+                    }
+                    $missed++;
+                    $missedlist[] = format_string($name);
+                }
+            }
+            $out[$uid] = [
+                'missed' => $missed,
+                'missedlist' => $missedlist,
+                'extensions' => isset($userextensions[$uid]) ? count($userextensions[$uid]) : 0,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Return [assignid => name] for assignments past their due date.
+     *
+     * @param int $now Effective current timestamp.
+     * @return array
+     */
+    protected function fetch_pastdue_assigns(int $now): array {
+        global $DB;
+        $rows = $DB->get_records_sql(
+            "SELECT id, name FROM {assign}
+              WHERE course = :cid AND duedate > 0 AND duedate < :now",
+            ['cid' => $this->courseid, 'now' => $now]
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $out[(int)$r->id] = $r->name;
+        }
+        return $out;
+    }
+
+    /**
+     * Return [quizid => name] for quizzes past their close time.
+     *
+     * @param int $now Effective current timestamp.
+     * @return array
+     */
+    protected function fetch_pastdue_quizzes(int $now): array {
+        global $DB;
+        $rows = $DB->get_records_sql(
+            "SELECT id, name FROM {quiz}
+              WHERE course = :cid AND timeclose > 0 AND timeclose < :now",
+            ['cid' => $this->courseid, 'now' => $now]
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $out[(int)$r->id] = $r->name;
+        }
+        return $out;
+    }
+
+    /**
+     * Return [forumid => name] for graded forums past their due date.
+     *
+     * Only forums with a positive duedate are considered — purely discussion
+     * forums without deadlines are not relevant to the missed-deadline metric.
+     *
+     * @param int $now Effective current timestamp.
+     * @return array
+     */
+    protected function fetch_pastdue_forums(int $now): array {
+        global $DB;
+        $rows = $DB->get_records_sql(
+            "SELECT id, name FROM {forum}
+              WHERE course = :cid AND duedate > 0 AND duedate < :now",
+            ['cid' => $this->courseid, 'now' => $now]
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $out[(int)$r->id] = $r->name;
+        }
+        return $out;
+    }
+
+    /**
+     * Whether the viewer has unrestricted, course-wide visibility.
+     *
+     * True only when the viewer holds gradereport/coifish:viewallgroups AND has not
+     * narrowed the view to a single group. A teacher without the capability never
+     * has unconstrained view, even if they happen to be in no groups — they simply
+     * have no students to see.
+     *
+     * @return bool
+     */
+    public function has_unconstrained_view(): bool {
+        if ($this->groupid > 0) {
+            return false;
+        }
+        return has_capability('gradereport/coifish:viewallgroups', $this->context);
+    }
+
+    /**
      * Fetch enrolled users honoring the viewer's group scope.
      *
      * Wraps get_enrolled_users() so summary/insights queries automatically respect the
      * gradereport/coifish:viewallgroups capability and "all my groups" semantics.
+     * `$onlyactive=true` excludes suspended/withdrawn enrolments from the live report
+     * (longitudinal snapshots in local_coifish still capture the data for history).
      *
      * @param string $userfields Fields clause forwarded to get_enrolled_users().
      * @param string $sort Sort clause forwarded to get_enrolled_users().
@@ -230,12 +603,21 @@ class report extends \grade_report {
         $scope = $this->get_scoped_groupids();
 
         if (empty($scope)) {
+            // Two cases collapse to empty scope: an unconstrained cap holder (show
+            // everyone) or a teacher without the cap who isn't in any group (show
+            // nobody — they're not assigned to teach anyone).
+            if (!$this->has_unconstrained_view()) {
+                return [];
+            }
             return get_enrolled_users(
                 $this->context,
                 'moodle/course:isincompletionreports',
                 0,
                 $userfields,
-                $sort
+                $sort,
+                0,
+                0,
+                true
             );
         }
 
@@ -245,7 +627,10 @@ class report extends \grade_report {
                 'moodle/course:isincompletionreports',
                 $scope[0],
                 $userfields,
-                $sort
+                $sort,
+                0,
+                0,
+                true
             );
         }
 
@@ -257,7 +642,10 @@ class report extends \grade_report {
                 'moodle/course:isincompletionreports',
                 $gid,
                 $userfields,
-                $sort
+                $sort,
+                0,
+                0,
+                true
             );
             foreach ($members as $uid => $user) {
                 if (!isset($merged[$uid])) {
@@ -475,51 +863,52 @@ class report extends \grade_report {
                     $categories[] = $categorydata;
                 }
             }
-            // Item type at the top level (uncategorised items) - wrap in a virtual category.
-            if ($type === 'item') {
-                $item = $child['object'];
-                // Skip the course total item.
-                if ($item->is_course_item()) {
-                    continue;
-                }
-                // Add to an "Uncategorised" bucket (handled below).
-            }
         }
 
-        // Collect uncategorised items only when there are no real categories.
-        // When categories exist, these loose items are already accounted for in the course total.
-        if (empty($categories)) {
-            $uncategoriseditems = [];
-            foreach ($element['children'] as $child) {
-                if (
-                    $child['type'] === 'item' && !$child['object']->is_course_item()
-                        && !$child['object']->is_category_item()
-                ) {
-                    $childitem = $child['object'];
-                    // Skip items with zero weight that aren't extra credit.
-                    $itemweight = $this->get_item_weight($childitem);
-                    if ($itemweight == 0 && !$this->is_extra_credit($childitem)) {
-                        continue;
-                    }
-                    $ishidden = $childitem->is_hidden() && !$this->canviewhidden;
-                    $uncategoriseditems[] = $this->process_grade_item($childitem, 1.0, $parenteffectiveweight, $ishidden);
-                }
+        // Items that live directly at this level (siblings of categories rather
+        // than inside one) are emitted as their own standalone cards so the
+        // student sees the actual gradebook layout: "Final exam — 60%" reads
+        // very differently from "Course-level assessments — 60% (containing
+        // an exam)". Each top-level item becomes its own one-item virtual
+        // category whose name and weight match the item exactly.
+        foreach ($element['children'] as $child) {
+            if (
+                $child['type'] !== 'item' || $child['object']->is_course_item()
+                    || $child['object']->is_category_item()
+            ) {
+                continue;
             }
+            $childitem = $child['object'];
+            // Skip items with zero weight that aren't extra credit.
+            $itemweight = $this->get_item_weight($childitem);
+            if ($itemweight == 0 && !$this->is_extra_credit($childitem)) {
+                continue;
+            }
+            $ishidden = $childitem->is_hidden() && !$this->canviewhidden;
+            // Wrap with item weight relative to wrapper = 1.0 so per-category
+            // averaging math (which expects item weights to be normalised
+            // within their parent) collapses cleanly to the item's own pct.
+            $itemdata = $this->process_grade_item($childitem, 1.0, $parenteffectiveweight * $itemweight, $ishidden);
+            $itemdata['weight_raw'] = 1.0;
+            $itemdata['weight'] = $this->format_percentage(1.0);
 
-            if (!empty($uncategoriseditems)) {
-                $categories[] = [
-                    'categoryname' => get_string('course'),
-                    'categoryweight' => $this->format_percentage(1.0),
-                    'categoryweight_raw' => 1.0,
-                    'hasweight' => false,
-                    'iscoursecategory' => true,
-                    'items' => $uncategoriseditems,
-                    'hasitems' => true,
-                    'subcategories' => [],
-                    'hassubcategories' => false,
-                    'categorytotal' => $this->get_category_total_data($this->courseitem),
-                ];
-            }
+            $categories[] = [
+                'categoryname' => format_string($childitem->get_name()),
+                'categoryweight' => $this->format_percentage($itemweight),
+                'categoryweight_raw' => $itemweight,
+                // Only show the weight badge when there's more than one top-level
+                // entry — single-item courses don't need a "100%" badge.
+                'hasweight' => $this->hasweights,
+                // Reuse the existing flag so the category-section template
+                // suppresses the inner "category total" row; the single item's
+                // own row already conveys the grade.
+                'iscoursecategory' => true,
+                'items' => [$itemdata],
+                'hasitems' => true,
+                'subcategories' => [],
+                'hassubcategories' => false,
+                'categorytotal' => $this->get_category_total_data($childitem),
+            ];
         }
 
         return $categories;
@@ -1278,9 +1667,6 @@ class report extends \grade_report {
 
         $categorybars = [];
         foreach ($this->gradedata as $cat) {
-            if (!empty($cat['iscoursecategory'])) {
-                continue;
-            }
             $categorybars[] = $this->build_category_bar($cat);
         }
 
@@ -2616,17 +3002,16 @@ class report extends \grade_report {
               WHERE a.course = :courseid AND ag.userid = :userid AND ag.grade >= 0",
             ['courseid' => $this->courseid, 'userid' => $userid]
         );
+        [$evsql, $evparams] = self::get_feedback_view_event_sql('fv1');
         $feedbackviewed = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT l.contextinstanceid)
                FROM {logstore_standard_log} l
               WHERE l.userid = :userid AND l.courseid = :courseid
-                AND l.eventname IN (:ev1, :ev2)",
-            [
+                AND l.eventname $evsql",
+            array_merge([
                 'userid' => $userid,
                 'courseid' => $this->courseid,
-                'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-            ]
+            ], $evparams)
         );
         $feedbackrate = $gradedcount > 0 ? round(($feedbackviewed / $gradedcount) * 100) : 0;
         $feedbackscore = min(100, $feedbackrate);
@@ -3636,18 +4021,17 @@ class report extends \grade_report {
         }
 
         // Count distinct feedback view events.
+        [$evsql, $evparams] = self::get_feedback_view_event_sql('fv2');
         $viewedfeedback = (int)$DB->count_records_sql(
             "SELECT COUNT(DISTINCT l.contextinstanceid)
                FROM {logstore_standard_log} l
               WHERE l.userid = :userid
                 AND l.courseid = :courseid
-                AND l.eventname IN (:ev1, :ev2)",
-            [
+                AND l.eventname $evsql",
+            array_merge([
                 'userid' => $userid,
                 'courseid' => $this->courseid,
-                'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-            ]
+            ], $evparams)
         );
 
         $percent = ($totalfeedback > 0) ? round(($viewedfeedback / $totalfeedback) * 100) : 0;
@@ -3804,6 +4188,11 @@ class report extends \grade_report {
             'stale_count' => 3,
             'stale_pct' => 20,
             'failing' => 20,
+            // Missed-deadline triggers — counts at the cohort level.
+            'missed_count' => 3,
+            'missed_pct' => 15,
+            // Frequent-extension trigger — user-level overrides per student.
+            'extensions_count' => 3,
         ];
         if ($sensitivity === 'high') {
             // Lower thresholds = more sensitive.
@@ -3813,6 +4202,9 @@ class report extends \grade_report {
             $triggers['stale_count'] = 2;
             $triggers['stale_pct'] = 15;
             $triggers['failing'] = 15;
+            $triggers['missed_count'] = 2;
+            $triggers['missed_pct'] = 10;
+            $triggers['extensions_count'] = 2;
         } else if ($sensitivity === 'low') {
             // Higher thresholds = less sensitive.
             $triggers['isolation'] = 40;
@@ -3821,6 +4213,9 @@ class report extends \grade_report {
             $triggers['stale_count'] = 5;
             $triggers['stale_pct'] = 30;
             $triggers['failing'] = 30;
+            $triggers['missed_count'] = 5;
+            $triggers['missed_pct'] = 25;
+            $triggers['extensions_count'] = 5;
         }
         return $triggers;
     }
@@ -3957,8 +4352,11 @@ class report extends \grade_report {
         $component = 'gradereport_coifish';
         $cards = [];
 
-        // Student name for intervention buttons.
-        $studentuser = $DB->get_record('user', ['id' => $this->userid], 'id, firstname, lastname');
+        // Student name for intervention buttons. fullname() needs the full set
+        // of name fields (firstnamephonetic, alternatename, etc.) to avoid a
+        // debug notice — use core_user\fields to fetch the canonical list.
+        $namefields = implode(', ', \core_user\fields::for_name()->get_required_fields());
+        $studentuser = $DB->get_record('user', ['id' => $this->userid], 'id, ' . $namefields);
         $studentname = $studentuser ? fullname($studentuser) : '';
 
         // Collect all widget data for cross-referencing.
@@ -4025,20 +4423,19 @@ class report extends \grade_report {
             15
         );
 
-        // Feedback view events (per assignment).
+        // Feedback view events (per assignment, plus Unified Grader if installed).
+        [$evsql, $evparams] = self::get_feedback_view_event_sql('fv3');
         $feedbacklogs = $DB->get_records_sql(
             "SELECT l.id, l.timecreated, l.objectid, l.eventname,
                     a.name AS assignname
                FROM {logstore_standard_log} l
           LEFT JOIN {assign} a ON a.id = l.objectid
               WHERE l.userid = :userid AND l.courseid = :courseid
-                AND l.eventname IN (:ev1, :ev2)
+                AND l.eventname $evsql
            ORDER BY l.timecreated DESC",
-            [
+            array_merge([
                 'userid' => $userid, 'courseid' => $courseid,
-                'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-            ],
+            ], $evparams),
             0,
             15
         );
@@ -4601,6 +4998,47 @@ class report extends \grade_report {
             }
         }
 
+        // Missed deadlines — direct, prescriptive card listing the activities.
+        // Re-uses the same bulk helper as the cohort path so both views are computed identically.
+        $totalindicators++;
+        $studentmissed = $this->get_cohort_missed_deadlines([$this->userid])[$this->userid] ?? null;
+        if ($studentmissed && $studentmissed['missed'] >= 1) {
+            $riskcount++;
+            $missedcount = (int)$studentmissed['missed'];
+            $missedlist = $studentmissed['missedlist'];
+            $missednames = implode(', ', $missedlist);
+            $detail = $buildstudentdetail(
+                [
+                    [
+                        'label' => get_string('detail_student_metric_missedcount', $component),
+                        'value' => (string)$missedcount,
+                    ],
+                    [
+                        'label' => get_string('detail_student_metric_missedlist', $component),
+                        'value' => $missednames,
+                    ],
+                ],
+                [
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_student_threshold_missed_trigger', $component),
+                    ],
+                ],
+                'detail_student_method_missed',
+                'detail_student_rationale_missed'
+            );
+            $cards[] = array_merge([
+                'icon' => 'calendar-times-o',
+                'diagnostictype' => 'missed_deadlines',
+                'severity' => $missedcount >= 3 ? 'danger' : 'warning',
+                'title' => get_string('insight_missed_title', $component),
+                'diagnostic' => get_string('insight_missed_diagnostic', $component, (object)[
+                    'count' => $missedcount, 'names' => $missednames,
+                ]),
+                'action' => get_string('insight_missed_action', $component),
+            ], $detail);
+        }
+
         // Quick stats summary.
         $stats = [];
         if (isset($progress['coursetotalbar']['percentage'])) {
@@ -4642,6 +5080,14 @@ class report extends \grade_report {
             $risklevel = 'high';
             $risklabel = get_string('insight_risk_high', $component);
         }
+
+        // Tag each card with its template family for the composer pre-fill.
+        foreach ($cards as &$card) {
+            $card['tplfamily'] = \gradereport_coifish\intervention_templates::family_for_diagnostic(
+                $card['diagnostictype'] ?? ''
+            );
+        }
+        unset($card);
 
         return [
             'cards' => $cards,
@@ -5204,8 +5650,12 @@ class report extends \grade_report {
                 $bbbattendance[$rec->userid] = (int)$rec->sessions;
             }
         }
+        // Count BBB activities whenever the module is installed, not gated on
+        // student attendance. A course with five scheduled BBB sessions and
+        // zero recorded attendance should still surface "5" so the teacher
+        // and coordinator know the activities exist.
         $totalbbbsessions = 0;
-        if (!empty($bbbattendance)) {
+        if ($dbman->table_exists('bigbluebuttonbn')) {
             $totalbbbsessions = (int)$DB->count_records_sql(
                 "SELECT COUNT(DISTINCT id) FROM {bigbluebuttonbn} WHERE course = :courseid",
                 ['courseid' => $this->courseid]
@@ -5318,71 +5768,232 @@ class report extends \grade_report {
         );
         $engagements = $DB->get_records_sql($engagementsql, $engageparams);
 
-        // Teaching Presence: feedback review rate per student.
-        $feedbacktotalsql = "SELECT ag.userid, COUNT(ag.id) AS total
-                               FROM {assign_grades} ag
-                               JOIN {assign} a ON a.id = ag.assignment
-                              WHERE a.course = :courseid AND ag.userid $insql AND ag.grade >= 0
-                           GROUP BY ag.userid";
+        // Teaching Presence: feedback review rate per student. The denominator
+        // is "graded items per student" on module types where feedback is
+        // normally expected (assign, forum, quiz, etc.) — auto-graded modules
+        // like lti and scorm are excluded so they don't drag the rate down.
+        [$ftinsql, $ftinparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'ftu');
+        [$frminsqlft, $frmparamsft] = $DB->get_in_or_equal(self::get_feedback_relevant_modnames(), SQL_PARAMS_NAMED, 'frmft');
+        $feedbacktotalsql = "SELECT userid, COUNT(*) AS total FROM (
+                                SELECT ag.userid, ag.assignment AS instanceid, 'assign' AS modname
+                                  FROM {assign_grades} ag
+                                  JOIN {assign} a ON a.id = ag.assignment
+                                 WHERE a.course = :ftcourseid1
+                                   AND ag.grade >= 0
+                                   AND ag.userid $insql
+                                UNION
+                                SELECT gg.userid, gi.iteminstance AS instanceid, gi.itemmodule AS modname
+                                  FROM {grade_grades} gg
+                                  JOIN {grade_items} gi ON gi.id = gg.itemid
+                                 WHERE gi.courseid = :ftcourseid2
+                                   AND gi.itemtype = 'mod'
+                                   AND gi.itemmodule != 'assign'
+                                   AND gi.itemmodule $frminsqlft
+                                   AND gg.finalgrade IS NOT NULL
+                                   AND gg.userid $ftinsql
+                            ) graded
+                          GROUP BY userid";
         $feedbacktotals = $DB->get_records_sql(
             $feedbacktotalsql,
-            array_merge(['courseid' => $this->courseid], $inparams)
+            array_merge(
+                ['ftcourseid1' => $this->courseid, 'ftcourseid2' => $this->courseid],
+                $inparams,
+                $ftinparams,
+                $frmparamsft
+            )
         );
 
+        [$evsql, $evparams] = self::get_feedback_view_event_sql('fv4');
         $feedbackviewsql = "SELECT l.userid, COUNT(DISTINCT l.contextinstanceid) AS viewed
                               FROM {logstore_standard_log} l
                              WHERE l.userid $insql AND l.courseid = :courseid
-                               AND l.eventname IN (:ev1, :ev2)
+                               AND l.eventname $evsql
                           GROUP BY l.userid";
         $feedbackviews = $DB->get_records_sql(
             $feedbackviewsql,
             array_merge(
                 $inparams,
-                [
-                    'courseid' => $this->courseid,
-                    'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                    'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-                ]
+                ['courseid' => $this->courseid],
+                $evparams
             )
         );
 
-        // Teaching Presence: instructor-side metrics.
-        // 1. Grading turnaround — average days between submission and grading.
-        $turnaroundsql = "SELECT AVG(ag.timemodified - asub.timemodified) AS avgturnaround,
-                                 COUNT(ag.id) AS graded
-                            FROM {assign_grades} ag
-                            JOIN {assign_submission} asub
-                                 ON asub.assignment = ag.assignment
-                                AND asub.userid = ag.userid
-                                AND asub.latest = 1
-                            JOIN {assign} a ON a.id = ag.assignment
-                           WHERE a.course = :courseid
-                             AND ag.grade >= 0
-                             AND asub.status = 'submitted'
-                             AND ag.timemodified > asub.timemodified";
+        // Teaching Presence: instructor-side metrics. The base cohort metrics here
+        // were originally assignment-only; broaden to all graded items (forums,
+        // quizzes, lessons, workshops) so courses without assignments — common
+        // for discussion-driven curricula — get accurate teaching-presence stats.
+
+        // 1. Grading turnaround — average days from submission to grade across
+        // all module types. Sources: assign_submission → assign_grades (assignments),
+        // forum_posts created → forum_grades.timemodified (graded forums),
+        // quiz_attempts.timefinish → grade_grades.timemodified (quizzes),
+        // generic fallback: grade_grades.timemodified for any other module that
+        // has a non-empty feedback row, treating the grade row's own creation
+        // time as the submission time (rough but better than excluding them).
+        $turnaroundparts = [];
+        $turnaroundparts[] = "SELECT (ag.timemodified - asub.timemodified) AS gap
+                                FROM {assign_grades} ag
+                                JOIN {assign_submission} asub
+                                     ON asub.assignment = ag.assignment
+                                    AND asub.userid = ag.userid
+                                    AND asub.latest = 1
+                                JOIN {assign} a ON a.id = ag.assignment
+                               WHERE a.course = :tcourseid1
+                                 AND ag.grade >= 0
+                                 AND asub.status = 'submitted'
+                                 AND ag.timemodified > asub.timemodified";
+        $turnaroundparts[] = "SELECT (fg.timemodified - firstpost.created) AS gap
+                                FROM {forum_grades} fg
+                                JOIN {forum} f ON f.id = fg.forum
+                                JOIN (
+                                    SELECT fd.forum, fp.userid, MIN(fp.created) AS created
+                                      FROM {forum_posts} fp
+                                      JOIN {forum_discussions} fd ON fd.id = fp.discussion
+                                  GROUP BY fd.forum, fp.userid
+                                ) firstpost
+                                     ON firstpost.forum = fg.forum
+                                    AND firstpost.userid = fg.userid
+                               WHERE f.course = :tcourseid2
+                                 AND fg.grade >= 0
+                                 AND fg.timemodified > firstpost.created";
+        $turnaroundparts[] = "SELECT (gg.timemodified - qa.timefinish) AS gap
+                                FROM {grade_grades} gg
+                                JOIN {grade_items} gi ON gi.id = gg.itemid
+                                JOIN {quiz_attempts} qa
+                                     ON qa.quiz = gi.iteminstance
+                                    AND qa.userid = gg.userid
+                                    AND qa.state IN ('finished', 'abandoned')
+                               WHERE gi.courseid = :tcourseid3
+                                 AND gi.itemtype = 'mod'
+                                 AND gi.itemmodule = 'quiz'
+                                 AND gg.finalgrade IS NOT NULL
+                                 AND gg.timemodified > qa.timefinish";
+        $turnaroundsql = "SELECT AVG(gap) AS avgturnaround, COUNT(*) AS graded
+                            FROM (" . implode(' UNION ALL ', $turnaroundparts) . ") gaps
+                           WHERE gap > 0";
         $turnaroundrow = $DB->get_record_sql(
             $turnaroundsql,
-            ['courseid' => $this->courseid]
+            [
+                'tcourseid1' => $this->courseid,
+                'tcourseid2' => $this->courseid,
+                'tcourseid3' => $this->courseid,
+            ]
         );
         $avgturnaroundsecs = $turnaroundrow ? (float)$turnaroundrow->avgturnaround : 0;
         $avgturnarounddays = $avgturnaroundsecs > 0 ? round($avgturnaroundsecs / DAYSECS, 1) : 0;
         $totalgraded = $turnaroundrow ? (int)$turnaroundrow->graded : 0;
 
-        // 2. Feedback comments — % of graded items with written comments.
-        $commentcountsql = "SELECT COUNT(fc.id) AS commented
-                              FROM {assignfeedback_comments} fc
-                              JOIN {assign_grades} ag ON ag.id = fc.grade
-                              JOIN {assign} a ON a.id = ag.assignment
-                             WHERE a.course = :courseid
-                               AND ag.grade >= 0
-                               AND fc.commenttext IS NOT NULL
-                               AND fc.commenttext != ''";
-        $commentrow = $DB->get_record_sql(
-            $commentcountsql,
-            ['courseid' => $this->courseid]
+        // 2. Feedback coverage — proportion of graded (item, student) pairs
+        // that received any form of teacher feedback. Numerator and denominator
+        // must use the same unit of work, so both are built as a UNION over the
+        // same module sources and deduped by (modname, instanceid, userid). UNION
+        // (not UNION ALL) collapses the same pair appearing in multiple feedback
+        // tables — without dedup, a graded item with both assignfeedback_comments
+        // and UG scomm would count twice and the ratio could exceed 100%.
+
+        // Denominator: every graded (item, student) pair on a module type where
+        // teacher feedback is normally expected. Auto-graded modules (lti, scorm,
+        // etc.) are intentionally excluded so the metric doesn't punish courses
+        // that use them for skill practice alongside graded forums/assigns.
+        $relevantmods = self::get_feedback_relevant_modnames();
+        [$frminsql, $frmparams] = $DB->get_in_or_equal($relevantmods, SQL_PARAMS_NAMED, 'frm');
+        $gradedparts = [];
+        $gradedparts[] = "SELECT 'assign' AS modname, ag.assignment AS instanceid, ag.userid
+                            FROM {assign_grades} ag
+                            JOIN {assign} a ON a.id = ag.assignment
+                           WHERE a.course = :gcid1 AND ag.grade >= 0";
+        $gradedparts[] = "SELECT gi.itemmodule AS modname, gi.iteminstance AS instanceid, gg.userid
+                            FROM {grade_grades} gg
+                            JOIN {grade_items} gi ON gi.id = gg.itemid
+                           WHERE gi.courseid = :gcid2
+                             AND gi.itemtype = 'mod'
+                             AND gi.itemmodule != 'assign'
+                             AND gi.itemmodule $frminsql
+                             AND gg.finalgrade IS NOT NULL";
+        $gradedsql = "SELECT COUNT(*) AS cnt FROM (" . implode(' UNION ', $gradedparts) . ") graded";
+        $gradedparams = array_merge(
+            ['gcid1' => $this->courseid, 'gcid2' => $this->courseid],
+            $frmparams
         );
+        $totalgradedpairs = (int)$DB->get_field_sql($gradedsql, $gradedparams);
+
+        /*
+         * Numerator: every (item, student) pair where any feedback signal exists.
+         * Signals — every channel a teacher might use:
+         *   assign  → assignfeedback_comments (text),
+         *             assignfeedback_editpdf_cmnt (PDF annotations),
+         *             assignfeedback_file (file feedback — audio/video/Loom uploads),
+         *   any mod → grade_grades.feedback (gradebook overall feedback),
+         *   any mod → local_unifiedgrader_scomm (UG submission comments).
+         * UNION (distinct) collapses pairs appearing in multiple signal sources.
+         */
+        $commentparts = [];
+        $commentparts[] = "SELECT 'assign' AS modname, ag.assignment AS instanceid, ag.userid
+                            FROM {assignfeedback_comments} fc
+                            JOIN {assign_grades} ag ON ag.id = fc.grade
+                            JOIN {assign} a ON a.id = ag.assignment
+                           WHERE a.course = :ccid1
+                             AND ag.grade >= 0
+                             AND fc.commenttext IS NOT NULL
+                             AND fc.commenttext != ''";
+        $dbman = $DB->get_manager();
+        $cparams = ['ccid1' => $this->courseid];
+        if ($dbman->table_exists('assignfeedback_editpdf_cmnt')) {
+            $commentparts[] = "SELECT 'assign' AS modname, ag.assignment AS instanceid, ag.userid
+                                FROM {assignfeedback_editpdf_cmnt} pc
+                                JOIN {assign_grades} ag ON ag.id = pc.gradeid
+                                JOIN {assign} a ON a.id = ag.assignment
+                               WHERE a.course = :ccid_pdf
+                                 AND ag.grade >= 0
+                                 AND pc.draft = 0";
+            $cparams['ccid_pdf'] = $this->courseid;
+        }
+        if ($dbman->table_exists('assignfeedback_file')) {
+            $commentparts[] = "SELECT 'assign' AS modname, ag.assignment AS instanceid, ag.userid
+                                FROM {assignfeedback_file} ff
+                                JOIN {assign_grades} ag ON ag.id = ff.grade
+                                JOIN {assign} a ON a.id = ag.assignment
+                               WHERE a.course = :ccid_file
+                                 AND ag.grade >= 0
+                                 AND ff.numfiles > 0";
+            $cparams['ccid_file'] = $this->courseid;
+        }
+        // Gradebook overall-feedback signals via grade_grades.feedback for relevant
+        // modules (including assign — UG and the gradebook editor write here too;
+        // an assign item with grade_grades feedback but no assignfeedback_comments
+        // row would otherwise be missed).
+        [$frminsql2, $frmparams2] = $DB->get_in_or_equal($relevantmods, SQL_PARAMS_NAMED, 'frm2');
+        $commentparts[] = "SELECT gi.itemmodule AS modname, gi.iteminstance AS instanceid, gg.userid
+                            FROM {grade_grades} gg
+                            JOIN {grade_items} gi ON gi.id = gg.itemid
+                           WHERE gi.courseid = :ccid2
+                             AND gi.itemtype = 'mod'
+                             AND gi.itemmodule $frminsql2
+                             AND gg.feedback IS NOT NULL
+                             AND gg.feedback != ''";
+        $cparams['ccid2'] = $this->courseid;
+        $cparams = array_merge($cparams, $frmparams2);
+        if ($dbman->table_exists('local_unifiedgrader_scomm')) {
+            [$frminsql3, $frmparams3] = $DB->get_in_or_equal($relevantmods, SQL_PARAMS_NAMED, 'frm3');
+            $commentparts[] = "SELECT m.name AS modname, cm.instance AS instanceid, ugs.userid
+                                FROM {local_unifiedgrader_scomm} ugs
+                                JOIN {course_modules} cm ON cm.id = ugs.cmid
+                                JOIN {modules} m ON m.id = cm.module
+                               WHERE cm.course = :ccid3
+                                 AND m.name $frminsql3
+                                 AND ugs.content IS NOT NULL
+                                 AND ugs.content != ''";
+            $cparams['ccid3'] = $this->courseid;
+            $cparams = array_merge($cparams, $frmparams3);
+        }
+        $commentsql = "SELECT COUNT(*) AS commented FROM (" . implode(' UNION ', $commentparts) . ") allfb";
+        $commentrow = $DB->get_record_sql($commentsql, $cparams);
         $commented = $commentrow ? (int)$commentrow->commented : 0;
-        $commentpct = $totalgraded > 0 ? round(($commented / $totalgraded) * 100) : 0;
+        // Cap at 100% defensively in case a feedback record exists for a student
+        // who has no grade row yet (e.g. teacher commented before entering a grade).
+        $commentpct = $totalgradedpairs > 0
+            ? min(100, round(($commented / $totalgradedpairs) * 100))
+            : 0;
 
         // 3. Ungraded submissions — submitted but awaiting grades.
         $ungradedsql = "SELECT COUNT(asub.id) AS ungraded
@@ -5438,6 +6049,15 @@ class report extends \grade_report {
         $lowengagementstudents = [];
         $lowfeedbackstudents = [];
         $belowpassstudents = [];
+
+        // Build a single map of (userid → comma-separated group names) for the cohort,
+        // so the at-risk table can show which tutorial/marking group each student belongs to.
+        $usergroupnames = $this->get_cohort_group_names($userids);
+
+        // Missed-deadline + extension counts per student.
+        $misseddata = $this->get_cohort_missed_deadlines($userids);
+        $missedstudents = []; // For the cohort diagnostic card.
+        $extensionstudents = [];
 
         foreach ($userids as $uid) {
             $riskflags = 0;
@@ -5588,6 +6208,37 @@ class report extends \grade_report {
                 ];
             }
 
+            // Missed deadlines — strong risk signal.
+            $missedcount = (int)($misseddata[$uid]['missed'] ?? 0);
+            $extensionscount = (int)($misseddata[$uid]['extensions'] ?? 0);
+            if ($missedcount >= 1) {
+                $riskflags++;
+                $flags[] = get_string('cohort_flag_missed', $component, $missedcount);
+                $missedstudents[] = [
+                    'userid' => $uid,
+                    'fullname' => fullname($enrolledusers[$uid]),
+                    'metric' => $missedcount,
+                    'missedlist' => $misseddata[$uid]['missedlist'] ?? [],
+                    'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
+                        'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
+                    ]))->out(false),
+                ];
+            }
+            // Frequent extensions — secondary risk signal (doesn't push to at-risk on its own,
+            // but contributes a flag when chronic).
+            if ($extensionscount >= (int)$triggers['extensions_count']) {
+                $riskflags++;
+                $flags[] = get_string('cohort_flag_extensions', $component, $extensionscount);
+                $extensionstudents[] = [
+                    'userid' => $uid,
+                    'fullname' => fullname($enrolledusers[$uid]),
+                    'metric' => $extensionscount,
+                    'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
+                        'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
+                    ]))->out(false),
+                ];
+            }
+
             // Store per-user rates for scatter plot.
             $userratedata[$uid] = [
                 'sprate' => $sprate,
@@ -5598,18 +6249,27 @@ class report extends \grade_report {
 
             // Collect at-risk students (2+ flags).
             if ($riskflags >= 2) {
+                $groupnames = $usergroupnames[$uid] ?? '';
                 $atrisk[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
                     'riskflags' => $riskflags,
                     'percentage' => $pct !== null ? $pct . '%' : '–',
+                    // Numeric sort values so the sortable-table JS doesn't have to parse cell text.
+                    'percentage_raw' => $pct !== null ? (float)$pct : -1,
                     'splevel' => $splevel['label'],
                     'spclass' => $splevel['class'],
+                    'splevel_raw' => (int)$splevel['level'],
                     'cplevel' => $cplevel['label'],
                     'cpclass' => $cplevel['class'],
+                    'cplevel_raw' => (int)$cplevel['level'],
                     'tplevel' => $tplevel['label'],
                     'tpclass' => $tplevel['class'],
+                    'tplevel_raw' => (int)$tplevel['level'],
                     'flaglist' => implode(', ', $flags),
+                    'groupnames' => $groupnames,
+                    'missedcount' => $missedcount,
+                    'extensionscount' => $extensionscount,
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
                     ]))->out(false),
@@ -6023,6 +6683,87 @@ class report extends \grade_report {
             ], $detail);
         }
 
+        // Missed deadlines — overdue, unsubmitted, no override exception.
+        $missedaffected = count($missedstudents);
+        $missedpct = $usercount > 0 ? round(($missedaffected / $usercount) * 100) : 0;
+        $missedtriggered = ($missedaffected >= (int)$triggers['missed_count'])
+            || ($missedpct >= (int)$triggers['missed_pct']);
+        if ($missedtriggered) {
+            $missedtotal = 0;
+            foreach ($missedstudents as $m) {
+                $missedtotal += (int)$m['metric'];
+            }
+            $detail = $builddetail(
+                [
+                    ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
+                    [
+                        'label' => get_string('detail_metric_affected', $component),
+                        'value' => $missedaffected . ' (' . $missedpct . '%)',
+                    ],
+                    [
+                        'label' => get_string('detail_metric_missed_total', $component),
+                        'value' => (string)$missedtotal,
+                    ],
+                ],
+                [
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_missed_trigger', $component, (object)[
+                            'count' => $triggers['missed_count'], 'pct' => $triggers['missed_pct'],
+                        ]),
+                    ],
+                ],
+                $missedstudents,
+                'detail_method_missed',
+                'detail_rationale_missed'
+            );
+            $cards[] = array_merge([
+                'icon' => 'calendar-times-o',
+                'diagnostictype' => 'cohort_missed',
+                'severity' => $missedpct >= 30 ? 'danger' : 'warning',
+                'title' => get_string('cohort_card_missed_title', $component),
+                'diagnostic' => get_string('cohort_card_missed_diagnostic', $component, (object)[
+                    'count' => $missedaffected, 'percent' => $missedpct, 'total' => $missedtotal,
+                ]),
+                'action' => get_string('cohort_card_missed_action', $component, (object)[
+                    'count' => $missedaffected,
+                ]),
+            ], $detail);
+        }
+
+        // Frequent extensions — chronic over-reliance on deadline overrides.
+        $extaffected = count($extensionstudents);
+        if ($extaffected >= 1) {
+            $detail = $builddetail(
+                [
+                    ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
+                    [
+                        'label' => get_string('detail_metric_affected', $component),
+                        'value' => (string)$extaffected,
+                    ],
+                ],
+                [
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_extensions_trigger', $component, $triggers['extensions_count']),
+                    ],
+                ],
+                $extensionstudents,
+                'detail_method_extensions',
+                'detail_rationale_extensions'
+            );
+            $cards[] = array_merge([
+                'icon' => 'clock-o',
+                'diagnostictype' => 'cohort_extensions',
+                'severity' => 'warning',
+                'title' => get_string('cohort_card_extensions_title', $component),
+                'diagnostic' => get_string('cohort_card_extensions_diagnostic', $component, (object)[
+                    'count' => $extaffected, 'threshold' => $triggers['extensions_count'],
+                ]),
+                'action' => get_string('cohort_card_extensions_action', $component, $extaffected),
+            ], $detail);
+        }
+
         // Cross-reference: isolation + low grades — compound risk.
         $isolatedandfailing = 0;
         $compoundnames = [];
@@ -6289,6 +7030,16 @@ class report extends \grade_report {
         $sociogramnodesjson = json_encode($sociogramnodes);
         $sociogramedgesjson = json_encode($sociogramedges);
 
+        // Tag each card with its template family so the intervention composer
+        // can pre-fill warm student-facing copy rather than echoing the
+        // teacher-facing analytics text back at the student.
+        foreach ($cards as &$card) {
+            $card['tplfamily'] = \gradereport_coifish\intervention_templates::family_for_diagnostic(
+                $card['diagnostictype'] ?? ''
+            );
+        }
+        unset($card);
+
         return [
             'hasdata' => true,
             'usercount' => $usercount,
@@ -6301,6 +7052,15 @@ class report extends \grade_report {
             'nocards' => empty($cards),
             'atrisk' => $atrisk,
             'hasatrisk' => !empty($atrisk),
+            // Whether ANY at-risk row has missed / extension counts >0 — used to
+            // toggle these columns on/off in the at-risk table so we don't add
+            // visual noise to courses where no deadlines have passed yet.
+            'showmissedcolumn' => !empty(array_filter($atrisk, function ($r) {
+                return ($r['missedcount'] ?? 0) > 0;
+            })),
+            'showextensionscolumn' => !empty(array_filter($atrisk, function ($r) {
+                return ($r['extensionscount'] ?? 0) > 0;
+            })),
             'stale' => $stale,
             'hasstale' => !empty($stale),
             'stats' => $stats,
@@ -6368,7 +7128,10 @@ class report extends \grade_report {
                 'moodle/course:isincompletionreports',
                 $group->id,
                 'u.id, u.firstname, u.lastname',
-                'u.lastname, u.firstname'
+                'u.lastname, u.firstname',
+                0,
+                0,
+                true
             );
             $uids = array_keys($members);
             if (empty($uids)) {
@@ -6512,17 +7275,14 @@ class report extends \grade_report {
                 array_merge(['cid' => $this->courseid], $inparams4)
             );
             [$insql5, $inparams5] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gf');
+            [$evsql, $evparams] = self::get_feedback_view_event_sql('fv5');
             $feedbackviews = $DB->get_records_sql(
                 "SELECT l.userid, COUNT(DISTINCT l.contextinstanceid) AS viewed
                    FROM {logstore_standard_log} l
                   WHERE l.userid $insql5 AND l.courseid = :cid
-                    AND l.eventname IN (:ev1, :ev2)
+                    AND l.eventname $evsql
                GROUP BY l.userid",
-                array_merge($inparams5, [
-                    'cid' => $this->courseid,
-                    'ev1' => '\\mod_assign\\event\\feedback_viewed',
-                    'ev2' => '\\mod_assign\\event\\submission_status_viewed',
-                ])
+                array_merge($inparams5, ['cid' => $this->courseid], $evparams)
             );
             $fbreviewed = 0;
             $fbtotalcount = 0;
@@ -6566,20 +7326,16 @@ class report extends \grade_report {
                 ['cid' => $this->courseid, 'gid' => $group->id, 'tid' => $USER->id]
             );
 
-            // Messages sent to students in this group.
-            [$insqlmsg, $inparamsmsg] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gm');
-            $teachermessages = (int)$DB->count_records_sql(
-                "SELECT COUNT(m.id)
-                   FROM {messages} m
-                  WHERE m.useridfrom = :tid
-                    AND m.conversationid IN (
-                        SELECT mc.id
-                          FROM {message_conversations} mc
-                          JOIN {message_conversation_members} mcm ON mcm.conversationid = mc.id
-                         WHERE mcm.userid $insqlmsg
-                    )",
-                array_merge(['tid' => $USER->id], $inparamsmsg)
-            );
+            // Messages sent to students in this group — sums across every
+            // messaging source the admin has selected (Moodle core + any
+            // local_satsmail / local_mail style plugins).
+            $teachermessages = 0;
+            foreach ($this->get_selected_messaging_sources() as $source) {
+                $msgrows = $this->query_messaging_source($source, [$USER->id], $uids);
+                foreach ($msgrows as $row) {
+                    $teachermessages += (int)$row->cnt;
+                }
+            }
 
             // Grading turnaround for this group's students.
             [$insqlgr, $inparamsgr] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gg');
@@ -6871,7 +7627,10 @@ class report extends \grade_report {
                     'moodle/course:isincompletionreports',
                     $gid,
                     'u.id',
-                    'u.id'
+                    'u.id',
+                    0,
+                    0,
+                    true
                 );
                 $studentids = array_merge($studentids, array_keys($members));
             }
@@ -7007,7 +7766,7 @@ class report extends \grade_report {
         $weeksenrolled = max(1, $daysenrolled / 7);
 
         // Get all users with grading capability (teachers/editing teachers).
-        $teachers = get_enrolled_users($context, 'moodle/grade:viewall', 0, 'u.*', 'u.lastname, u.firstname');
+        $teachers = get_enrolled_users($context, 'moodle/grade:viewall', 0, 'u.*', 'u.lastname, u.firstname', 0, 0, true);
         if (empty($teachers)) {
             return ['teachers' => [], 'hasteachers' => false, 'summary' => []];
         }
@@ -7061,7 +7820,12 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams3)
         );
 
-        // 4. BigBlueButton sessions (if module is installed).
+        // 4. BigBlueButton sessions (if module is installed). We count distinct
+        // BBB activity instances the teacher *touched* (created, joined, viewed
+        // the recording of) rather than only sessions they explicitly created
+        // — the `log = 'Create'` filter previously used here missed every
+        // session a teacher attended without being the one to start the room,
+        // which is common when sessions are pre-scheduled or co-taught.
         $bbbdata = [];
         $bbbinstalled = $DB->get_manager()->table_exists('bigbluebuttonbn_logs');
         if ($bbbinstalled) {
@@ -7073,7 +7837,6 @@ class report extends \grade_report {
                    FROM {bigbluebuttonbn_logs} bl
                    JOIN {bigbluebuttonbn} bbn ON bbn.id = bl.bigbluebuttonbnid
                   WHERE bbn.course = :courseid
-                    AND bl.log = 'Create'
                     AND bl.userid $insql4
                GROUP BY bl.userid",
                 array_merge(['courseid' => $this->courseid], $inparams4)
@@ -7112,7 +7875,7 @@ class report extends \grade_report {
         }
 
         // 7. Messaging responsiveness: messages sent to students (from configured sources).
-        $students = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id');
+        $students = get_enrolled_users($context, 'moodle/course:isincompletionreports', 0, 'u.id', null, 0, 0, true);
         $studentids = array_keys($students);
         $messagessent = [];
         $selectedsources = $this->get_selected_messaging_sources();
@@ -7559,7 +8322,11 @@ class report extends \grade_report {
                 ['isid' => $rec->intvstudentid]
             );
 
-            $teacher = $DB->get_record('user', ['id' => $rec->teacherid], 'id, firstname, lastname');
+            $teacher = $DB->get_record(
+                'user',
+                ['id' => $rec->teacherid],
+                'id, ' . implode(', ', \core_user\fields::for_name()->get_required_fields())
+            );
             $actionlabel = $rec->actiontype === 'custom'
                 ? $rec->customaction
                 : get_string('intervention_action_' . $rec->actiontype, $component);
@@ -7674,8 +8441,9 @@ class report extends \grade_report {
             ['courseid' => $this->courseid]
         );
         $escalationlist = [];
+        $namefields = implode(', ', \core_user\fields::for_name()->get_required_fields());
         foreach ($escalation as $row) {
-            $user = $DB->get_record('user', ['id' => $row->studentid], 'id, firstname, lastname');
+            $user = $DB->get_record('user', ['id' => $row->studentid], 'id, ' . $namefields);
             if ($user) {
                 $escalationlist[] = [
                     'fullname' => fullname($user),

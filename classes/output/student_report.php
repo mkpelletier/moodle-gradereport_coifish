@@ -95,13 +95,38 @@ class student_report implements renderable, templatable {
         $data->has_grades = true;
         $data->hasweights = $this->report->has_weights();
 
-        // Show user name in teacher view.
+        // For the intervention-modal partial's composer hint.
+        $data->messagingsourcelabel = \gradereport_coifish\messaging_dispatcher::get_default_source_label();
+        $data->courseid = $this->report->courseid;
+        $data->interventiontemplatesjson = json_encode(
+            \gradereport_coifish\intervention_templates::get_all_for_client()
+        );
+
+        // Show user name in teacher view, along with the student's group
+        // memberships in this course so the teacher can see at a glance which
+        // tutorial / marking group the student belongs to.
         if ($this->isteacherview) {
             $user = \core_user::get_user($this->report->get_userid());
             $data->userfullname = fullname($user);
             $data->showuser = true;
+
+            $usergroups = groups_get_user_groups($this->report->courseid, $this->report->get_userid());
+            $groupids = $usergroups[0] ?? [];
+            $studentgroups = [];
+            foreach ($groupids as $gid) {
+                $group = groups_get_group($gid);
+                if ($group) {
+                    $studentgroups[] = [
+                        'groupid' => (int)$group->id,
+                        'groupname' => format_string($group->name),
+                    ];
+                }
+            }
+            $data->studentgroups = $studentgroups;
+            $data->hasstudentgroups = !empty($studentgroups);
         } else {
             $data->showuser = false;
+            $data->hasstudentgroups = false;
         }
 
         // Categories with items.
