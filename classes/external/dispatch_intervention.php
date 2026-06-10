@@ -104,9 +104,21 @@ class dispatch_intervention extends external_api {
             throw new \invalid_parameter_exception('actionkind must be message or announcement');
         }
 
-        // Resolve recipients: explicit list, or every active enrolment for cohort scope.
+        // Resolve recipients. An explicit student list always wins. When a
+        // cohort-scope action arrives with no explicit recipients, only an
+        // ANNOUNCEMENT may fan out to every enrolled student — it posts to the
+        // course forum, which the whole class sees anyway. A targeted MESSAGE
+        // must never silently blast the entire class: that was the cause of
+        // "missed deadline" reminders reaching all enrolled students. The empty
+        // list normally only arrives if the client failed to resolve the card's
+        // affected-student set, so we fail loudly rather than over-deliver.
         $recipientids = $params['studentids'];
         if (empty($recipientids) && $params['scope'] === 'cohort') {
+            if ($params['actionkind'] !== 'announcement') {
+                throw new \invalid_parameter_exception(
+                    'a message action requires at least one explicit recipient'
+                );
+            }
             $enrolled = get_enrolled_users(
                 $context,
                 'moodle/course:isincompletionreports',
@@ -120,6 +132,13 @@ class dispatch_intervention extends external_api {
             $recipientids = array_keys($enrolled);
         }
 
+        // Resolve any per-recipient placeholders the body uses (currently
+        // {missedwork} → each student's own past-due assessment names).
+        $replacements = [];
+        if ($params['actionkind'] === 'message' && strpos($params['body'], '{missedwork}') !== false) {
+            $replacements = self::resolve_missedwork($params['courseid'], $context, $recipientids);
+        }
+
         // Dispatch.
         $delivered = 0;
         $announcementdiscussionid = 0;
@@ -128,7 +147,8 @@ class dispatch_intervention extends external_api {
                 $params['courseid'],
                 $recipientids,
                 $params['subject'],
-                $params['body']
+                $params['body'],
+                $replacements
             );
         } else {
             $announcementdiscussionid = \gradereport_coifish\announcement_poster::post(
@@ -192,6 +212,47 @@ class dispatch_intervention extends external_api {
             'announcementdiscussionid' => $announcementdiscussionid,
             'students' => $studentrecords,
         ];
+    }
+
+    /**
+     * Build the {missedwork} placeholder value for each recipient: a
+     * comma-separated list of that student's own past-due assessment names.
+     *
+     * Students with nothing outstanding (an edge case if a teacher hand-picks
+     * recipients) get a neutral fallback so the sentence still reads naturally.
+     *
+     * @param int $courseid
+     * @param \context_course $context
+     * @param int[] $recipientids
+     * @return array Map of userid => ['missedwork' => string].
+     */
+    protected static function resolve_missedwork(int $courseid, \context_course $context, array $recipientids): array {
+        global $CFG;
+        require_once($CFG->dirroot . '/grade/lib.php');
+
+        $replacements = [];
+        if (empty($recipientids)) {
+            return $replacements;
+        }
+
+        // A user-id-less report instance is enough: the constructor skips the
+        // heavy per-user grade loading when userid is 0, and get_cohort_missed_deadlines
+        // takes the recipient list explicitly.
+        $gpr = new \grade_plugin_return(['type' => 'report', 'plugin' => 'coifish', 'courseid' => $courseid]);
+        $report = new \gradereport_coifish\report($courseid, $gpr, $context, 0, 0, false);
+        $missed = $report->get_cohort_missed_deadlines(array_map('intval', $recipientids));
+
+        $fallback = get_string('intervention_missedwork_fallback', 'gradereport_coifish');
+        foreach ($recipientids as $uid) {
+            // Use the raw (un-format_string'd) names: the message body is escaped
+            // once by the messaging channel, so passing already-escaped names here
+            // would double-encode characters like & in activity titles.
+            $list = $missed[(int)$uid]['missedlistraw'] ?? [];
+            $replacements[(int)$uid] = [
+                'missedwork' => !empty($list) ? implode(', ', $list) : $fallback,
+            ];
+        }
+        return $replacements;
     }
 
     /**

@@ -33,6 +33,9 @@ require_once($CFG->libdir . '/gradelib.php');
  * Grade report that displays a user-friendly overview of assessments with weights and contributions.
  */
 class report extends \grade_report {
+    /** @var int Max at-risk rows rendered in the cohort insights table (sorted most-at-risk-first). */
+    protected const ATRISK_RENDER_CAP = 100;
+
     /** @var int The user ID to display grades for (0 = no user selected). */
     protected int $userid;
 
@@ -355,14 +358,16 @@ class report extends \grade_report {
      *
      * @param int[] $userids Student user IDs.
      * @return array Map of userid => ['missed' => int, 'missedlist' => string[],
-     *                                  'extensions' => int].
+     *                                  'missedlistraw' => string[], 'extensions' => int].
+     *               missedlist holds format_string'd names for HTML display;
+     *               missedlistraw holds the plain names for plain-text consumers.
      */
-    protected function get_cohort_missed_deadlines(array $userids): array {
+    public function get_cohort_missed_deadlines(array $userids): array {
         global $DB;
         $now = $this->effective_now();
         $out = [];
         foreach ($userids as $uid) {
-            $out[(int)$uid] = ['missed' => 0, 'missedlist' => [], 'extensions' => 0];
+            $out[(int)$uid] = ['missed' => 0, 'missedlist' => [], 'missedlistraw' => [], 'extensions' => 0];
         }
         if (empty($userids)) {
             return $out;
@@ -473,6 +478,7 @@ class report extends \grade_report {
             $uid = (int)$uid;
             $missed = 0;
             $missedlist = [];
+            $missedlistraw = [];
             foreach ($itemsbymod as $modname => $items) {
                 foreach ($items as $iid => $name) {
                     // Skip if student already engaged.
@@ -495,12 +501,19 @@ class report extends \grade_report {
                         continue;
                     }
                     $missed++;
+                    // missedlist is format_string'd for HTML display; missedlistraw
+                    // keeps the plain activity name for plain-text consumers such as
+                    // the {missedwork} message placeholder, which gets escaped once
+                    // by the messaging channel (double-escaping plain names would
+                    // surface entities like "&amp;" in the message).
                     $missedlist[] = format_string($name);
+                    $missedlistraw[] = $name;
                 }
             }
             $out[$uid] = [
                 'missed' => $missed,
                 'missedlist' => $missedlist,
+                'missedlistraw' => $missedlistraw,
                 'extensions' => isset($userextensions[$uid]) ? count($userextensions[$uid]) : 0,
             ];
         }
@@ -4521,11 +4534,14 @@ class report extends \grade_report {
             $aid = (int)$ga->assignment;
             $viewed = isset($fbviewbyassign[$aid]);
             $feedbacklogdata[] = [
+                // Cells render HTML-escaped in the template, so keep them plain
+                // text. The "not viewed" emphasis is carried by the row highlight
+                // below rather than inline markup.
                 'cells' => [
                     $ga->assignname,
                     userdate($ga->gradedat, $datefmt),
                     $viewed ? userdate($fbviewbyassign[$aid], $datefmt)
-                        : '<span class="text-danger fw-bold">' . get_string('log_not_viewed', $component) . '</span>',
+                        : get_string('log_not_viewed', $component),
                 ],
                 'highlight' => !$viewed,
             ];
@@ -4606,6 +4622,11 @@ class report extends \grade_report {
                 'courseid' => $this->courseid,
                 'studentid' => $this->userid,
                 'studentname' => $studentname,
+                // Raw JSON for the intervention modal's recipient list; the
+                // template's {{studentsjson}} tag does the single HTML-attribute
+                // escaping. Built with json_encode (not hand-assembled) so names
+                // containing quotes can't break the JSON.
+                'studentsjson' => json_encode([['id' => (int)$this->userid, 'name' => $studentname]]),
                 'metrics' => $metrics,
                 'hasmetrics' => !empty($metrics),
                 'thresholds' => $thresholds,
@@ -6282,6 +6303,17 @@ class report extends \grade_report {
             return $b['riskflags'] - $a['riskflags'];
         });
 
+        // Cap the rendered at-risk list so a very large cohort doesn't push
+        // hundreds of rows into a single HTML page. The list is sorted
+        // most-at-risk-first, so the cap keeps the rows that matter most; the
+        // template shows a "top N of M" note when truncated. The true total is
+        // preserved for the KPI count below.
+        $atrisktotal = count($atrisk);
+        if ($atrisktotal > self::ATRISK_RENDER_CAP) {
+            $atrisk = array_slice($atrisk, 0, self::ATRISK_RENDER_CAP);
+        }
+        $atriskcapped = $atrisktotal > count($atrisk);
+
         // 4. Build presence breakdown for template.
         $presencelevels = ['none', 'emerging', 'developing', 'established', 'exemplary'];
         $presencelabels = [];
@@ -6399,7 +6431,13 @@ class report extends \grade_report {
             &$cardindex
         ) {
             $cardindex++;
-            // Build JSON for intervention modal student selection.
+            // Build JSON for intervention modal student selection. Emit raw JSON
+            // here and let the Mustache {{studentsjson}} tag perform the single
+            // HTML-attribute escaping. Pre-escaping in PHP as well caused a
+            // double-escape: the doubly-encoded value reached the browser as
+            // malformed JSON, JSON.parse() threw, and the modal silently fell
+            // back to "all enrolled students" — sending targeted messages to the
+            // whole class.
             $sjson = [];
             foreach ($students as $s) {
                 if (!empty($s['userid'])) {
@@ -6415,7 +6453,7 @@ class report extends \grade_report {
                 'hasthresholds' => !empty($thresholds),
                 'students' => $students,
                 'hasstudents' => !empty($students),
-                'studentsjson' => htmlspecialchars(json_encode($sjson), ENT_QUOTES, 'UTF-8'),
+                'studentsjson' => json_encode($sjson),
                 'methodology' => get_string($methodologykey, $component),
                 'rationale' => get_string($rationalekey, $component),
             ];
@@ -6944,8 +6982,8 @@ class report extends \grade_report {
         }
         $stats[] = [
             'label' => get_string('cohort_stat_atrisk', $component),
-            'value' => (string)count($atrisk),
-            'isrisk' => count($atrisk) > 0,
+            'value' => (string)$atrisktotal,
+            'isrisk' => $atrisktotal > 0,
         ];
 
         // Overall risk level.
@@ -7052,6 +7090,13 @@ class report extends \grade_report {
             'nocards' => empty($cards),
             'atrisk' => $atrisk,
             'hasatrisk' => !empty($atrisk),
+            'atriskcapped' => $atriskcapped,
+            'atriskcapnote' => $atriskcapped
+                ? get_string('cohort_atrisk_capped', $component, (object)[
+                    'shown' => count($atrisk),
+                    'total' => $atrisktotal,
+                ])
+                : '',
             // Whether ANY at-risk row has missed / extension counts >0 — used to
             // toggle these columns on/off in the at-risk table so we don't add
             // visual noise to courses where no deadlines have passed yet.
@@ -7121,6 +7166,17 @@ class report extends \grade_report {
 
         $grademax = (float)$this->courseitem->grademax;
         $rows = [];
+
+        // Course-wide activity count is the same for every group; compute it once
+        // here rather than re-running the same query inside the per-group loop.
+        $totalactivities = (int)$DB->count_records_sql(
+            "SELECT COUNT(cm.id)
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module
+              WHERE cm.course = :cid AND cm.deletioninprogress = 0
+                AND m.name IN ('assign', 'quiz', 'page', 'book', 'resource', 'url', 'folder')",
+            ['cid' => $this->courseid]
+        );
 
         foreach ($allgroups as $group) {
             $members = get_enrolled_users(
@@ -7217,15 +7273,8 @@ class report extends \grade_report {
                 }
             }
 
-            // Cognitive Presence: engagement rate per group.
-            $totalactivities = (int)$DB->count_records_sql(
-                "SELECT COUNT(cm.id)
-                   FROM {course_modules} cm
-                   JOIN {modules} m ON m.id = cm.module
-                  WHERE cm.course = :cid AND cm.deletioninprogress = 0
-                    AND m.name IN ('assign', 'quiz', 'page', 'book', 'resource', 'url', 'folder')",
-                ['cid' => $this->courseid]
-            );
+            // Cognitive Presence: engagement rate per group ($totalactivities is
+            // course-wide and hoisted above the loop).
             // Per-user engagement for this group.
             [$insql2, $inparams2] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'ge');
             [$insql3, $inparams3] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gq');
@@ -8310,23 +8359,33 @@ class report extends \grade_report {
         }
 
         $component = 'gradereport_coifish';
+
+        // Bulk-load the latest outcome per intervention-student and all teacher
+        // names up front, so the loop below issues no per-row queries.
+        $intvstudentids = array_map('intval', array_column(array_values($records), 'intvstudentid'));
+        [$oinsql, $oinparams] = $DB->get_in_or_equal($intvstudentids, SQL_PARAMS_NAMED, 'iso');
+        $outcomerows = $DB->get_records_sql(
+            "SELECT id, intvstudentid, outcome, grade, engagement, social, feedbackpct, daysinactive, checkdays
+               FROM {gradereport_coifish_intv_out}
+              WHERE intvstudentid $oinsql
+           ORDER BY checkdays ASC",
+            $oinparams
+        );
+        // ORDER BY checkdays ASC means the last write per intvstudentid wins → latest.
+        $latestoutcome = [];
+        foreach ($outcomerows as $orow) {
+            $latestoutcome[(int)$orow->intvstudentid] = $orow;
+        }
+
+        $teacherids = array_map('intval', array_column(array_values($records), 'teacherid'));
+        [$tinsql, $tinparams] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'tch');
+        $namefields = implode(', ', \core_user\fields::for_name()->get_required_fields());
+        $teachers = $DB->get_records_select('user', "id $tinsql", $tinparams, '', 'id, ' . $namefields);
+
         $interventions = [];
         foreach ($records as $rec) {
-            // Get the latest outcome for this student-intervention.
-            $outcome = $DB->get_record_sql(
-                "SELECT outcome, grade, engagement, social, feedbackpct, daysinactive, checkdays
-                   FROM {gradereport_coifish_intv_out}
-                  WHERE intvstudentid = :isid
-               ORDER BY checkdays DESC
-                  LIMIT 1",
-                ['isid' => $rec->intvstudentid]
-            );
-
-            $teacher = $DB->get_record(
-                'user',
-                ['id' => $rec->teacherid],
-                'id, ' . implode(', ', \core_user\fields::for_name()->get_required_fields())
-            );
+            $outcome = $latestoutcome[(int)$rec->intvstudentid] ?? null;
+            $teacher = $teachers[$rec->teacherid] ?? null;
             $actionlabel = $rec->actiontype === 'custom'
                 ? $rec->customaction
                 : get_string('intervention_action_' . $rec->actiontype, $component);
@@ -8441,14 +8500,23 @@ class report extends \grade_report {
             ['courseid' => $this->courseid]
         );
         $escalationlist = [];
-        $namefields = implode(', ', \core_user\fields::for_name()->get_required_fields());
-        foreach ($escalation as $row) {
-            $user = $DB->get_record('user', ['id' => $row->studentid], 'id, ' . $namefields);
-            if ($user) {
-                $escalationlist[] = [
-                    'fullname' => fullname($user),
-                    'interventioncount' => (int)$row->intv_count,
-                ];
+        if (!empty($escalation)) {
+            // Bulk-load the escalated students in one query rather than per row.
+            $namefields = implode(', ', \core_user\fields::for_name()->get_required_fields());
+            [$einsql, $einparams] = $DB->get_in_or_equal(
+                array_map('intval', array_keys($escalation)),
+                SQL_PARAMS_NAMED,
+                'esc'
+            );
+            $escusers = $DB->get_records_select('user', "id $einsql", $einparams, '', 'id, ' . $namefields);
+            foreach ($escalation as $row) {
+                $user = $escusers[$row->studentid] ?? null;
+                if ($user) {
+                    $escalationlist[] = [
+                        'fullname' => fullname($user),
+                        'interventioncount' => (int)$row->intv_count,
+                    ];
+                }
             }
         }
 

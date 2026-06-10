@@ -83,6 +83,13 @@ class calculate_feedback_metrics extends scheduled_task {
             $textdata = $this->get_feedback_text_analysis($course->id, $teacherids);
             $structuredscore = $this->get_structured_grading_score($course->id);
 
+            // Pre-load existing rows for this course once (keyed by userid) so the
+            // per-teacher loop does an in-memory lookup instead of a query each.
+            $existingbyuser = [];
+            foreach ($DB->get_records('gradereport_coifish_feedback', ['courseid' => $course->id], '', 'id, userid') as $erow) {
+                $existingbyuser[(int)$erow->userid] = (int)$erow->id;
+            }
+
             foreach ($teacherids as $uid) {
                 $coverage = $coveragedata[$uid] ?? ['total' => 0, 'withfeedback' => 0, 'score' => 0];
                 $text = $textdata[$uid] ?? [
@@ -116,13 +123,9 @@ class calculate_feedback_metrics extends scheduled_task {
                     'timemodified' => $now,
                 ];
 
-                $existing = $DB->get_record('gradereport_coifish_feedback', [
-                    'courseid' => $course->id,
-                    'userid' => $uid,
-                ]);
-
-                if ($existing) {
-                    $record['id'] = $existing->id;
+                $existingid = $existingbyuser[(int)$uid] ?? null;
+                if ($existingid) {
+                    $record['id'] = $existingid;
                     $DB->update_record('gradereport_coifish_feedback', (object)$record);
                 } else {
                     $DB->insert_record('gradereport_coifish_feedback', (object)$record);

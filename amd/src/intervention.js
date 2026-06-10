@@ -66,15 +66,33 @@ const openModal = ($btn) => {
             escapeHtml(students[0].name) +
             '<input type="hidden" class="intv-student-id" value="' + students[0].id + '"></span>');
     } else {
+        // Many recipients: render a collapsed-by-default panel so a long list
+        // doesn't push the rest of the form below the viewport. The header shows
+        // the selected count; the checkboxes live in a hidden panel that the
+        // teacher can expand to review/deselect. (Hidden checkboxes are still
+        // submitted — :checked matches regardless of visibility.)
+        const summaryTpl = $modal.attr('data-students-summary') || '{count} students selected';
+        const summary = summaryTpl.replace('{count}', String(students.length));
+        let listHtml = '';
         students.forEach((s) => {
-            $container.append(
+            listHtml +=
                 '<div class="form-check">' +
                 '<input type="checkbox" class="form-check-input intv-student-cb" ' +
                 'value="' + s.id + '" id="intv-stu-' + s.id + '" checked>' +
                 '<label class="form-check-label" for="intv-stu-' + s.id + '">' +
-                escapeHtml(s.name) + '</label></div>'
-            );
+                escapeHtml(s.name) + '</label></div>';
         });
+        $container.html(
+            '<div class="intv-students-collapsible border rounded">' +
+            '<button type="button" aria-expanded="false" ' +
+            'class="btn btn-link text-decoration-none w-100 d-flex align-items-center gap-2 px-3 py-2 intv-students-toggle">' +
+            '<i class="fa fa-users" aria-hidden="true"></i>' +
+            '<span class="intv-students-summary flex-grow-1 text-start">' + escapeHtml(summary) + '</span>' +
+            '<i class="fa fa-chevron-down intv-students-chevron" aria-hidden="true"></i>' +
+            '</button>' +
+            '<div class="intv-students-list d-none px-3 pb-2">' + listHtml + '</div>' +
+            '</div>'
+        );
     }
 
     // Reset form fields and filter action options by scope.
@@ -314,6 +332,24 @@ export const init = () => {
     $(document).on('click', '.gradetracker-log-intervention-btn', function(e) {
         e.preventDefault();
         openModal($(this));
+    });
+
+    // Expand/collapse the recipient checkbox panel.
+    $modal.on('click', '.intv-students-toggle', function() {
+        const $btn = $(this);
+        const expanded = $btn.attr('aria-expanded') === 'true';
+        $btn.attr('aria-expanded', String(!expanded));
+        $btn.siblings('.intv-students-list').toggleClass('d-none', expanded);
+        $btn.find('.intv-students-chevron')
+            .toggleClass('fa-chevron-down', expanded)
+            .toggleClass('fa-chevron-up', !expanded);
+    });
+
+    // Keep the header count in sync as recipients are (de)selected.
+    $modal.on('change', '.intv-student-cb', function() {
+        const tpl = $modal.attr('data-students-summary') || '{count} students selected';
+        const selected = $modal.find('.intv-student-cb:checked').length;
+        $modal.find('.intv-students-summary').text(tpl.replace('{count}', String(selected)));
     });
 
     $('#intv-submit-btn').on('click', function() {

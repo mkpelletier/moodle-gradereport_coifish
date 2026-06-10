@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.7.0] - 2026-06-10
+
+### Added
+- **`{missedwork}` message placeholder** for intervention messages. When a teacher sends a message from a missed-deadline card, `{missedwork}` is substituted per recipient with that student's own list of past-due assessment names. The messaging dispatcher now supports arbitrary per-recipient placeholders (alongside the existing `{firstname}`).
+- **Collapsible recipient list in the intervention dialog.** When a card targets many students, the recipient checkboxes now render in a panel that is collapsed by default, showing just a "N students selected — click to review" header so the rest of the form stays in view. The count tracks live as recipients are de-selected. Single-student and whole-cohort cards are unchanged.
+
+### Fixed
+- **Targeted interventions no longer message the whole class.** The cohort cards' recipient JSON was HTML-escaped in PHP and again by the Mustache `{{ }}` tag, so the doubly-encoded value failed `JSON.parse()` in the browser and the dialog silently fell back to "All enrolled students" — sending a targeted message to every enrolled student. This affected every cohort intervention type (isolation, feedback, missed deadlines, engagement, stale, failing, compound). The JSON is now emitted raw and escaped once by the template. *(Security / privacy.)*
+- **Stored XSS in the per-student insights log tables.** Log-table cells were rendered with the raw `{{{.}}}` Mustache tag, so a student-set forum discussion name containing markup executed in the teacher's browser. Cells are now HTML-escaped; the one cell that needed emphasis is conveyed by the existing row highlight instead of inline markup. *(Security.)*
+- **Separate-groups bypass on the individual student report.** A teacher restricted to their own groups (without `gradereport/coifish:viewallgroups`) could open any student's individual insights by editing the `?userid=` URL parameter, and likewise via the user-profile grade-report hook. Both entry points now enforce the same group scope as the cohort views through a shared helper.
+- **Hardened the intervention dispatch endpoint** so a message action can never be sent with an empty recipient list expanding to all enrolled students; only announcements (which post to the forum) fan out to everyone.
+- **`{missedwork}` no longer double-encodes** activity names that contain characters like `&` or `<` (the messaging channel applies the single HTML escape).
+
+### Performance
+- **Eliminated N+1 query patterns**: the per-student intervention history (was 1 + 2×records, now constant), the coordinator escalation list (per-row user fetch now bulk-loaded), the cross-group comparison (course-wide activity count hoisted out of the per-group loop), and the feedback-metrics scheduled task (per-teacher existence check now bulk-loaded per course).
+- **Capped the cohort "at-risk" table render** at the 100 most-at-risk students (sorted most-flags-first) with a "showing X of N" notice, so very large cohorts don't push hundreds of rows into a single page. The at-risk KPI still reflects the true total.
+
 ## [2.6.0] - 2026-05-20
 
 ### Added

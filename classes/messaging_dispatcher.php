@@ -91,6 +91,11 @@ class messaging_dispatcher {
      * @param int[] $recipientids Student user IDs.
      * @param string $subject Message subject (plain text).
      * @param string $body Message body (HTML or plain text — newlines preserved).
+     * @param array $replacements Optional per-recipient placeholder values, keyed by
+     *                            user ID then placeholder name, e.g.
+     *                            [42 => ['missedwork' => 'Essay 1, Quiz 2']]. Each is
+     *                            substituted as {name} in the body for that recipient
+     *                            only. {firstname} is always handled.
      * @return int Number of recipients successfully delivered to.
      * @throws \moodle_exception When the source is not supported or fails to send.
      */
@@ -98,7 +103,8 @@ class messaging_dispatcher {
         int $courseid,
         array $recipientids,
         string $subject,
-        string $body
+        string $body,
+        array $replacements = []
     ): int {
         if (empty($recipientids)) {
             return 0;
@@ -106,31 +112,39 @@ class messaging_dispatcher {
         $source = self::get_default_source();
         switch ($source) {
             case 'local_satsmail':
-                return self::send_via_satsmail($courseid, $recipientids, $subject, $body);
+                return self::send_via_satsmail($courseid, $recipientids, $subject, $body, $replacements);
             case 'local_mail':
                 // Local Mail's API mirrors satsmail's; if the class isn't there, fall through.
                 if (class_exists('\\local_mail\\message') && class_exists('\\local_mail\\message_data')) {
-                    return self::send_via_localmail($courseid, $recipientids, $subject, $body);
+                    return self::send_via_localmail($courseid, $recipientids, $subject, $body, $replacements);
                 }
-                return self::send_via_core($recipientids, $subject, $body);
+                return self::send_via_core($recipientids, $subject, $body, $replacements);
             case 'core':
             default:
-                return self::send_via_core($recipientids, $subject, $body);
+                return self::send_via_core($recipientids, $subject, $body, $replacements);
         }
     }
 
     /**
-     * Personalise the body for one recipient by substituting {firstname}.
+     * Personalise the body for one recipient.
      *
-     * Kept central so every channel (core, satsmail, local_mail) handles the
-     * placeholder identically and templates can be authored once.
+     * Always substitutes {firstname}; additionally substitutes any per-recipient
+     * placeholders supplied by the caller (e.g. {missedwork}). Kept central so
+     * every channel (core, satsmail, local_mail) handles placeholders identically
+     * and templates can be authored once.
      *
-     * @param string $body Template body, possibly containing {firstname}.
+     * @param string $body Template body, possibly containing {firstname} or others.
      * @param \stdClass $user Recipient user record.
+     * @param array $replacements Per-recipient placeholder map keyed by user ID then name.
      * @return string
      */
-    protected static function personalise(string $body, \stdClass $user): string {
-        return str_replace('{firstname}', $user->firstname ?? '', $body);
+    protected static function personalise(string $body, \stdClass $user, array $replacements = []): string {
+        $body = str_replace('{firstname}', $user->firstname ?? '', $body);
+        $userreplacements = $replacements[(int)$user->id] ?? [];
+        foreach ($userreplacements as $name => $value) {
+            $body = str_replace('{' . $name . '}', (string)$value, $body);
+        }
+        return $body;
     }
 
     /**
@@ -139,9 +153,15 @@ class messaging_dispatcher {
      * @param int[] $recipientids
      * @param string $subject
      * @param string $body
+     * @param array $replacements Per-recipient placeholder map.
      * @return int Successful deliveries.
      */
-    protected static function send_via_core(array $recipientids, string $subject, string $body): int {
+    protected static function send_via_core(
+        array $recipientids,
+        string $subject,
+        string $body,
+        array $replacements = []
+    ): int {
         global $USER, $CFG;
         require_once($CFG->dirroot . '/message/lib.php');
 
@@ -151,7 +171,7 @@ class messaging_dispatcher {
             if (!$recipient) {
                 continue;
             }
-            $personalbody = self::personalise($body, $recipient);
+            $personalbody = self::personalise($body, $recipient, $replacements);
             $eventdata = new \core\message\message();
             $eventdata->component = 'moodle';
             $eventdata->name = 'instantmessage';
@@ -178,14 +198,21 @@ class messaging_dispatcher {
      * @param int[] $recipientids
      * @param string $subject
      * @param string $body
+     * @param array $replacements Per-recipient placeholder map.
      * @return int Successful deliveries.
      */
-    protected static function send_via_satsmail(int $courseid, array $recipientids, string $subject, string $body): int {
+    protected static function send_via_satsmail(
+        int $courseid,
+        array $recipientids,
+        string $subject,
+        string $body,
+        array $replacements = []
+    ): int {
         global $USER;
 
         if (!class_exists('\\local_satsmail\\message') || !class_exists('\\local_satsmail\\message_data')) {
             // Plugin not actually loaded — fall back to core.
-            return self::send_via_core($recipientids, $subject, $body);
+            return self::send_via_core($recipientids, $subject, $body, $replacements);
         }
         $course = \local_satsmail\course::get($courseid);
         $sender = \local_satsmail\user::get($USER->id);
@@ -198,7 +225,7 @@ class messaging_dispatcher {
                 continue;
             }
             $userrecord = \core_user::get_user((int)$uid);
-            $personalbody = $userrecord ? self::personalise($body, $userrecord) : $body;
+            $personalbody = $userrecord ? self::personalise($body, $userrecord, $replacements) : $body;
             // The message_data constructor is private — the factory method is the
             // only entry point.
             $data = \local_satsmail\message_data::new($course, $sender);
@@ -220,9 +247,16 @@ class messaging_dispatcher {
      * @param int[] $recipientids
      * @param string $subject
      * @param string $body
+     * @param array $replacements Per-recipient placeholder map.
      * @return int Successful deliveries.
      */
-    protected static function send_via_localmail(int $courseid, array $recipientids, string $subject, string $body): int {
+    protected static function send_via_localmail(
+        int $courseid,
+        array $recipientids,
+        string $subject,
+        string $body,
+        array $replacements = []
+    ): int {
         global $USER;
 
         $course = \local_mail\course::get($courseid);
@@ -236,7 +270,7 @@ class messaging_dispatcher {
                 continue;
             }
             $userrecord = \core_user::get_user((int)$uid);
-            $personalbody = $userrecord ? self::personalise($body, $userrecord) : $body;
+            $personalbody = $userrecord ? self::personalise($body, $userrecord, $replacements) : $body;
             // Local Mail mirrors satsmail's factory shape.
             $data = \local_mail\message_data::new($course, $sender);
             $data->subject = $subject;

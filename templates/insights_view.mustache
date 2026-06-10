@@ -138,7 +138,7 @@
                                     data-scope="individual"
                                     data-cardtitle="{{title}}"
                                     data-tpl-family="{{tplfamily}}"
-                                    data-students="[{&quot;id&quot;:{{studentid}},&quot;name&quot;:&quot;{{studentname}}&quot;}]">
+                                    data-students="{{studentsjson}}">
                                 <i class="fa fa-clipboard me-1" aria-hidden="true"></i>{{#str}}intervention_log_btn, gradereport_coifish{{/str}}
                             </button>
                         </div>
@@ -215,7 +215,7 @@
                                                     {{#logdata}}
                                                         <tr class="{{#highlight}}gradetracker-logdata-highlight{{/highlight}}">
                                                             {{#cells}}
-                                                                <td>{{{.}}}</td>
+                                                                <td>{{.}}</td>
                                                             {{/cells}}
                                                         </tr>
                                                     {{/logdata}}

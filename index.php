@@ -25,6 +25,7 @@
 require_once('../../../config.php');
 require_once($CFG->libdir . '/gradelib.php');
 require_once($CFG->dirroot . '/grade/lib.php');
+require_once($CFG->dirroot . '/grade/report/coifish/lib.php');
 
 $courseid      = required_param('id', PARAM_INT);
 $userid        = optional_param('userid', 0, PARAM_INT);
@@ -112,6 +113,18 @@ if (!$canviewall) {
     if (!in_array((int)$groupid, array_map('intval', $mygroupids), true)) {
         $groupid = 0;
     }
+}
+
+// Individual drill-down must respect the same group scope as the cohort views.
+// A teacher without gradereport/coifish:viewallgroups may only open the profile
+// of a student who shares one of their groups — otherwise the URL ?userid=
+// parameter would bypass separate-groups boundaries that the summary/insights
+// views enforce. Out-of-scope requests fall back to the summary view rather than
+// leaking the student's data. (Shared helper keeps this identical to the
+// profile-report hook in lib.php.)
+if ($canviewall && $userid > 0
+        && !gradereport_coifish_viewer_can_see_user($courseid, $userid, $context)) {
+    $userid = 0;
 }
 
 // Instantiate the report.
