@@ -501,11 +501,11 @@ class report extends \grade_report {
                         continue;
                     }
                     $missed++;
-                    // missedlist is format_string'd for HTML display; missedlistraw
-                    // keeps the plain activity name for plain-text consumers such as
-                    // the {missedwork} message placeholder, which gets escaped once
-                    // by the messaging channel (double-escaping plain names would
-                    // surface entities like "&amp;" in the message).
+                    // The missedlist field is format_string'd for HTML display;
+                    // missedlistraw keeps the plain activity name for plain-text
+                    // consumers such as the {missedwork} message placeholder, which
+                    // gets escaped once by the messaging channel (double-escaping
+                    // plain names would surface entities like "&amp;" in the message).
                     $missedlist[] = format_string($name);
                     $missedlistraw[] = $name;
                 }

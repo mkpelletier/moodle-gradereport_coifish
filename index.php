@@ -122,8 +122,11 @@ if (!$canviewall) {
 // views enforce. Out-of-scope requests fall back to the summary view rather than
 // leaking the student's data. (Shared helper keeps this identical to the
 // profile-report hook in lib.php.)
-if ($canviewall && $userid > 0
-        && !gradereport_coifish_viewer_can_see_user($courseid, $userid, $context)) {
+if (
+    $canviewall
+    && $userid > 0
+    && !gradereport_coifish_viewer_can_see_user($courseid, $userid, $context)
+) {
     $userid = 0;
 }
 
