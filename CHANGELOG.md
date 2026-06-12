@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.7.1] - 2026-06-12
+
+### Fixed
+- **Grading-turnaround metric no longer inflated by late grade edits.** The assign branch of the cohort teaching-presence turnaround ran the clock to `assign_grades.timemodified` (last modification), so editing a grade weeks later stretched the lecturer's average. It now runs to `assign_grades.timecreated` (first grade). The graded forum branch likewise moves to `forum_grades.timecreated` for consistency. Quiz turnaround is unchanged (quizzes are auto-graded; the gradebook row's `timecreated` is bookkeeping, not a lecturer first-grade signal).
+- **Academic-integrity holds no longer penalise the lecturer.** When a graded assign item was escalated for an academic-integrity review, the time it spent on hold was counted against the lecturer's turnaround. Where the Unified Grader referral table (`local_unifiedgrader_referral`) is present, a referral that lands after submission and before the grade now pauses the clock at the referral moment (1-stamp model: submission → escalation). Every use is guarded by `table_exists()` and falls back to first-grade when the table is absent, so sites without Unified Grader are unaffected. This expression is kept numerically consistent with the sibling `local_coifish` assign turnaround.
+
 ## [2.7.0] - 2026-06-10
 
 ### Added

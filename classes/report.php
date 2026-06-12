@@ -5488,6 +5488,104 @@ class report extends \grade_report {
     }
 
     /**
+     * Build the integrity-aware grading-turnaround clock fragments.
+     *
+     * Returns the clock-stop SQL expression and the referral LEFT JOIN, both
+     * guarded by table_exists so the metric degrades gracefully on sites without
+     * Unified Grader installed. Shared by every assign-turnaround query in this
+     * report (cohort UNION, per-group block, per-lecturer historical trends) so
+     * the same lecturer's number is identical on every surface. The fragments
+     * reference the `ag` (assign_grades) and `asub` (assign_submission) aliases,
+     * which every caller defines.
+     *
+     * @return array{0:string,1:string} [clock-stop expression, referral LEFT JOIN SQL]
+     */
+    protected function get_assign_turnaround_clock(): array {
+        global $DB;
+
+        if (!$DB->get_manager()->table_exists('local_unifiedgrader_referral')) {
+            // Table absent (Unified Grader not installed / other institutions):
+            // fall back to grade creation as the clock-stop.
+            return ['ag.timecreated', ''];
+        }
+
+        // Pause the clock at the referral moment (1-stamp model): the clock
+        // stops at the earliest referral that lands strictly after submission
+        // and no later than when the grade was created; otherwise it stops at
+        // grade creation.
+        $clockend = "CASE
+                        WHEN ugref.timereferred IS NOT NULL
+                             AND ugref.timereferred > asub.timemodified
+                             AND ugref.timereferred <= ag.timecreated
+                        THEN ugref.timereferred
+                        ELSE ag.timecreated
+                     END";
+        $referraljoin = "LEFT JOIN (
+                            SELECT cm.instance AS assignid, r.userid AS userid,
+                                   MIN(r.timereferred) AS timereferred
+                              FROM {local_unifiedgrader_referral} r
+                              JOIN {course_modules} cm ON cm.id = r.cmid
+                              JOIN {modules} mo ON mo.id = cm.module AND mo.name = 'assign'
+                          GROUP BY cm.instance, r.userid
+                         ) ugref ON ugref.assignid = ag.assignment AND ugref.userid = ag.userid";
+
+        return [$clockend, $referraljoin];
+    }
+
+    /**
+     * Build the assign branch of the grading-turnaround UNION.
+     *
+     * The clock runs from submission (asub.timemodified) to the moment the grade
+     * was first created (ag.timecreated) — not last modified — so later edits to a
+     * grade do not inflate a lecturer's turnaround. Where the Unified Grader
+     * referral table is present, an academic-integrity referral pauses the clock:
+     * if the item was referred for review after submission but before it was
+     * graded, the referral timestamp becomes the clock-stop instead, so the
+     * lecturer is not penalised for the hold. The expression is kept numerically
+     * identical to local_coifish's assign turnaround.
+     *
+     * @param string $courseparamname Named SQL placeholder (without leading colon)
+     *                                 that the caller binds to the course id.
+     * @return string The SELECT ... fragment producing a single `gap` column.
+     */
+    protected function get_assign_turnaround_part(string $courseparamname): string {
+        [$clockend, $referraljoin] = $this->get_assign_turnaround_clock();
+
+        return "SELECT ($clockend - asub.timemodified) AS gap
+                  FROM {assign_grades} ag
+                  JOIN {assign_submission} asub
+                       ON asub.assignment = ag.assignment
+                      AND asub.userid = ag.userid
+                      AND asub.latest = 1
+                  JOIN {assign} a ON a.id = ag.assignment
+                  $referraljoin
+                 WHERE a.course = :$courseparamname
+                   AND ag.grade >= 0
+                   AND asub.status = 'submitted'
+                   AND ($clockend) > asub.timemodified";
+    }
+
+    /**
+     * Compute the average assign-only grading turnaround, in seconds, for the
+     * current course. Thin seam over the assign UNION-part used by
+     * {@see get_cohort_insights_data()}, exposed for unit testing the
+     * timecreated base and the integrity-referral pause in isolation.
+     *
+     * @return float Average gap in seconds (0.0 when nothing qualifies).
+     */
+    protected function get_assign_avg_turnaround_seconds(): float {
+        global $DB;
+
+        $part = $this->get_assign_turnaround_part('tacourseid');
+        $row = $DB->get_record_sql(
+            "SELECT AVG(gap) AS avgturnaround FROM ($part) gaps WHERE gap > 0",
+            ['tacourseid' => $this->courseid]
+        );
+
+        return $row && $row->avgturnaround !== null ? (float)$row->avgturnaround : 0.0;
+    }
+
+    /**
      * Get cohort-level insights for the teacher summary view.
      *
      * Aggregates COI presence indicators, grade distribution, and risk diagnostics
@@ -5846,24 +5944,18 @@ class report extends \grade_report {
 
         // 1. Grading turnaround — average days from submission to grade across
         // all module types. Sources: assign_submission → assign_grades (assignments),
-        // forum_posts created → forum_grades.timemodified (graded forums),
+        // forum_posts created → forum_grades.timecreated (graded forums),
         // quiz_attempts.timefinish → grade_grades.timemodified (quizzes),
         // generic fallback: grade_grades.timemodified for any other module that
         // has a non-empty feedback row, treating the grade row's own creation
         // time as the submission time (rough but better than excluding them).
+        // The assign branch runs the clock to first-grade (timecreated) and is
+        // paused by an academic-integrity referral; see
+        // get_assign_turnaround_part(). Forum mirrors this first-grade base via
+        // forum_grades.timecreated.
         $turnaroundparts = [];
-        $turnaroundparts[] = "SELECT (ag.timemodified - asub.timemodified) AS gap
-                                FROM {assign_grades} ag
-                                JOIN {assign_submission} asub
-                                     ON asub.assignment = ag.assignment
-                                    AND asub.userid = ag.userid
-                                    AND asub.latest = 1
-                                JOIN {assign} a ON a.id = ag.assignment
-                               WHERE a.course = :tcourseid1
-                                 AND ag.grade >= 0
-                                 AND asub.status = 'submitted'
-                                 AND ag.timemodified > asub.timemodified";
-        $turnaroundparts[] = "SELECT (fg.timemodified - firstpost.created) AS gap
+        $turnaroundparts[] = $this->get_assign_turnaround_part('tcourseid1');
+        $turnaroundparts[] = "SELECT (fg.timecreated - firstpost.created) AS gap
                                 FROM {forum_grades} fg
                                 JOIN {forum} f ON f.id = fg.forum
                                 JOIN (
@@ -5876,7 +5968,13 @@ class report extends \grade_report {
                                     AND firstpost.userid = fg.userid
                                WHERE f.course = :tcourseid2
                                  AND fg.grade >= 0
-                                 AND fg.timemodified > firstpost.created";
+                                 AND fg.timecreated > firstpost.created";
+        // Quiz turnaround is left on grade_grades.timemodified: quizzes are
+        // auto-graded, so there is no lecturer grading clock to protect, and the
+        // gradebook row's timecreated reflects gradebook bookkeeping (attempt
+        // submit / regrade), not a first lecturer grade — switching it would not
+        // be a meaningful first-grade signal. Referrals are keyed cmid→assign and
+        // are intentionally not applied here.
         $turnaroundparts[] = "SELECT (gg.timemodified - qa.timefinish) AS gap
                                 FROM {grade_grades} gg
                                 JOIN {grade_items} gi ON gi.id = gg.itemid
@@ -7386,20 +7484,23 @@ class report extends \grade_report {
                 }
             }
 
-            // Grading turnaround for this group's students.
+            // Grading turnaround for this group's students. Uses the same
+            // integrity-aware clock as the cohort and historical-trend surfaces.
+            [$gclockend, $greferraljoin] = $this->get_assign_turnaround_clock();
             [$insqlgr, $inparamsgr] = $DB->get_in_or_equal($uids, SQL_PARAMS_NAMED, 'gg');
             $groupturnaround = $DB->get_record_sql(
-                "SELECT AVG(ag.timemodified - asub.timemodified) AS avg_turnaround
+                "SELECT AVG(($gclockend) - asub.timemodified) AS avg_turnaround
                    FROM {assign_grades} ag
                    JOIN {assign_submission} asub
                         ON asub.assignment = ag.assignment AND asub.userid = ag.userid
                         AND asub.status = 'submitted'
                    JOIN {assign} a ON a.id = ag.assignment
+                   $greferraljoin
                   WHERE a.course = :cid
                     AND ag.grader = :tid
                     AND ag.userid $insqlgr
                     AND ag.grade >= 0
-                    AND ag.timemodified > asub.timemodified",
+                    AND ($gclockend) > asub.timemodified",
                 array_merge(['cid' => $this->courseid, 'tid' => $USER->id], $inparamsgr)
             );
             $groupturnarounddays = $groupturnaround && $groupturnaround->avg_turnaround > 0
@@ -7835,21 +7936,24 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams)
         );
 
-        // 2. Grading turnaround: average time from submission to grade.
+        // 2. Grading turnaround: average time from submission to grade. Uses the
+        // same integrity-aware clock as the cohort and per-group surfaces.
+        [$tclockend, $treferraljoin] = $this->get_assign_turnaround_clock();
         [$insql2, $inparams2] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'grd');
         $gradingturnaround = $DB->get_records_sql(
             "SELECT ag.grader AS userid,
                     COUNT(ag.id) AS graded_count,
-                    AVG(ag.timemodified - asub.timemodified) AS avg_turnaround
+                    AVG(($tclockend) - asub.timemodified) AS avg_turnaround
                FROM {assign_grades} ag
                JOIN {assign_submission} asub ON asub.assignment = ag.assignment
                     AND asub.userid = ag.userid AND asub.latest = 1
                JOIN {assign} a ON a.id = ag.assignment
+               $treferraljoin
               WHERE a.course = :courseid
                 AND ag.grader $insql2
                 AND ag.grade >= 0
                 AND asub.timemodified > 0
-                AND ag.timemodified > asub.timemodified
+                AND ($tclockend) > asub.timemodified
            GROUP BY ag.grader",
             array_merge(['courseid' => $this->courseid], $inparams2)
         );

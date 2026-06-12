@@ -416,4 +416,93 @@ final class report_test extends \advanced_testcase {
         $report = $this->create_report($course, $student->id);
         $this->assertTrue($report->has_weights());
     }
+
+    /**
+     * Invoke a protected method on a report instance via reflection.
+     *
+     * @param report $report The report instance.
+     * @param string $method The protected method name.
+     * @param array $args Positional arguments.
+     * @return mixed The method's return value.
+     */
+    protected function call_protected(report $report, string $method, array $args = []) {
+        $ref = new \ReflectionMethod(report::class, $method);
+        $ref->setAccessible(true);
+        return $ref->invokeArgs($report, $args);
+    }
+
+    /**
+     * The assign grading turnaround must run the clock to the *first* grade
+     * (assign_grades.timecreated), not the last modification (timemodified), so a
+     * late edit to a grade does not inflate a lecturer's turnaround; and an
+     * academic-integrity referral recorded after submission but before grading
+     * must pause the clock at the referral moment.
+     */
+    public function test_assign_turnaround_uses_timecreated_and_referral_pause(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $student = $generator->create_user();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($student->id, $course->id, 'student');
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+
+        $assign = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay']);
+
+        // Timeline: submission at T0; first grade at T0+5d; a late edit bumps
+        // timemodified to T0+30d. With timecreated as the base the turnaround is
+        // 5 days; with timemodified it would be a wrong 30 days.
+        $t0 = 1700000000;
+        $day = DAYSECS;
+
+        $DB->insert_record('assign_submission', (object)[
+            'assignment' => $assign->id,
+            'userid' => $student->id,
+            'timecreated' => $t0,
+            'timemodified' => $t0,
+            'status' => 'submitted',
+            'groupid' => 0,
+            'attemptnumber' => 0,
+            'latest' => 1,
+        ]);
+        $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign->id,
+            'userid' => $student->id,
+            'grader' => $teacher->id,
+            'grade' => 75.0,
+            'timecreated' => $t0 + 5 * $day,
+            'timemodified' => $t0 + 30 * $day,
+            'attemptnumber' => 0,
+        ]);
+
+        $report = $this->create_report($course, 0);
+
+        // Without any referral: clock runs submission (T0) → first grade (T0+5d).
+        $secs = $this->call_protected($report, 'get_assign_avg_turnaround_seconds');
+        $this->assertEqualsWithDelta(5 * $day, $secs, 1.0,
+            'assign turnaround should use timecreated (5d), not timemodified (30d)');
+
+        // A referral lands at T0+3d — after submission, before the grade was
+        // created — so the clock pauses there: turnaround becomes 3 days.
+        if ($DB->get_manager()->table_exists('local_unifiedgrader_referral')) {
+            $DB->insert_record('local_unifiedgrader_referral', (object)[
+                'cmid' => $assign->cmid,
+                'userid' => $student->id,
+                'authorid' => $teacher->id,
+                'reason' => 'plagiarism',
+                'note' => '',
+                'status' => 'open',
+                'outcome' => '',
+                'timereferred' => $t0 + 3 * $day,
+                'timeresolved' => 0,
+                'timemodified' => $t0 + 3 * $day,
+            ]);
+
+            $secs = $this->call_protected($report, 'get_assign_avg_turnaround_seconds');
+            $this->assertEqualsWithDelta(3 * $day, $secs, 1.0,
+                'an integrity referral before grading should pause the clock (3d)');
+        }
+    }
 }
