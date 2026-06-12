@@ -481,8 +481,7 @@ final class report_test extends \advanced_testcase {
 
         // Without any referral: clock runs submission (T0) → first grade (T0+5d).
         $secs = $this->call_protected($report, 'get_assign_avg_turnaround_seconds');
-        $this->assertEqualsWithDelta(5 * $day, $secs, 1.0,
-            'assign turnaround should use timecreated (5d), not timemodified (30d)');
+        $this->assertEqualsWithDelta(5 * $day, $secs, 1.0, 'assign turnaround should use timecreated, not timemodified');
 
         // A referral lands at T0+3d — after submission, before the grade was
         // created — so the clock pauses there: turnaround becomes 3 days.
@@ -501,8 +500,7 @@ final class report_test extends \advanced_testcase {
             ]);
 
             $secs = $this->call_protected($report, 'get_assign_avg_turnaround_seconds');
-            $this->assertEqualsWithDelta(3 * $day, $secs, 1.0,
-                'an integrity referral before grading should pause the clock (3d)');
+            $this->assertEqualsWithDelta(3 * $day, $secs, 1.0, 'an integrity referral before grading should pause the clock');
         }
     }
 }
