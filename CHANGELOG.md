@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.7.2] - 2026-06-12
+
+### Changed
+- **Recorded feedback is now properly credited in feedback quality.** Audio/video feedback delivered as an assignment feedback-file attachment (no comment text) previously scored as zero coverage and contributed nothing to depth/quality/personalisation — penalising teachers who give rich recorded feedback. It now counts toward coverage and is folded into the depth, quality, and personalisation analysis alongside embedded recordings.
+- **Recorded feedback is graded by quantity and size, not a flat floor.** Each recording counts (quantity), and where a file size is available it scales the depth credit as a rough proxy for length; embedded/S3-hosted recordings whose size we can't see get a generous fixed floor. Duration is not available from the recorder, so we are explicit that size is only a proxy.
+- **Feedback-quality "How is this determined?" card updated** to describe how recorded feedback is handled and to show the current sub-score weights, so the methodology shown always matches the configuration.
+
+### Added
+- **Configurable feedback-quality weights.** Five admin settings (coverage, depth, quality, personalisation, structured grading) let you tune the composite. They are normalised at calculation time, so they need not sum to 100. Defaults match the previous fixed weights (30/20/20/15/15).
+
 ## [2.7.1] - 2026-06-12
 
 ### Fixed

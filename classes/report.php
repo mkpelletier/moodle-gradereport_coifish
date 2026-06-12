@@ -195,6 +195,74 @@ class report extends \grade_report {
     }
 
     /**
+     * Default sub-weights (as percentages) for the feedback-quality composite.
+     * Admins override these via the gradereport_coifish/feedback_weight_* settings.
+     *
+     * @var array
+     */
+    public const FEEDBACK_WEIGHT_DEFAULTS = [
+        'coverage' => 30,
+        'depth' => 20,
+        'quality' => 20,
+        'personalisation' => 15,
+        'structured' => 15,
+    ];
+
+    /**
+     * Feedback-quality composite sub-weights, normalised to fractions that sum
+     * to 1. Reads the admin-configurable percentages and falls back to the
+     * defaults; if an admin zeroes everything, the defaults are used so the
+     * composite never collapses to zero.
+     *
+     * @return array Map of dimension => fraction (coverage, depth, quality,
+     *               personalisation, structured).
+     */
+    public static function get_feedback_weights(): array {
+        $raw = [];
+        $sum = 0.0;
+        foreach (self::FEEDBACK_WEIGHT_DEFAULTS as $key => $default) {
+            $val = get_config('gradereport_coifish', 'feedback_weight_' . $key);
+            $val = ($val === false || $val === '') ? $default : (float)$val;
+            $val = max(0.0, $val);
+            $raw[$key] = $val;
+            $sum += $val;
+        }
+        if ($sum <= 0) {
+            $raw = self::FEEDBACK_WEIGHT_DEFAULTS;
+            $sum = array_sum(self::FEEDBACK_WEIGHT_DEFAULTS);
+        }
+        $out = [];
+        foreach ($raw as $key => $val) {
+            $out[$key] = $val / $sum;
+        }
+        return $out;
+    }
+
+    /**
+     * Human-readable summary of the current feedback-quality weights, e.g.
+     * "coverage 30%, depth 20%, ...". Used in the "How is this determined" card
+     * so the methodology shown always matches the configured weights.
+     *
+     * @return string
+     */
+    public static function format_feedback_weights_summary(): string {
+        $weights = self::get_feedback_weights();
+        $labels = [
+            'coverage' => get_string('coord_feedback_coverage', 'gradereport_coifish'),
+            'depth' => get_string('coord_feedback_depth', 'gradereport_coifish'),
+            'quality' => get_string('coord_feedback_quality', 'gradereport_coifish'),
+            'personalisation' => get_string('coord_feedback_personalisation', 'gradereport_coifish'),
+            'structured' => get_string('coord_feedback_structured', 'gradereport_coifish'),
+        ];
+        $parts = [];
+        foreach ($weights as $key => $fraction) {
+            $label = $labels[$key] ?? $key;
+            $parts[] = $label . ' ' . round($fraction * 100) . '%';
+        }
+        return implode(', ', $parts);
+    }
+
+    /**
      * Count the activities a student is reasonably expected to engage with in a course.
      *
      * Mirrors the engagement-metric activity set (assign, quiz, page, book, resource,

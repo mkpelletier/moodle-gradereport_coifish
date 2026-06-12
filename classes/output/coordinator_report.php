@@ -61,6 +61,8 @@ class coordinator_report implements renderable, templatable {
         $data->hasbbb = $coorddata['hasbbb'] ?? false;
         $data->hascontent = $coorddata['hascontent'] ?? true;
         $data->hasfeedback = $coorddata['hasfeedback'] ?? true;
+        // Live feedback-quality weights, so the methodology card matches config.
+        $data->feedbackweightsummary = \gradereport_coifish\report::format_feedback_weights_summary();
         $data->teachers = $coorddata['teachers'] ?? [];
         $data->summary = $coorddata['summary'] ?? [];
         $data->recommendations = $coorddata['recommendations'] ?? [];

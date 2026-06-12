@@ -83,6 +83,9 @@ class calculate_feedback_metrics extends scheduled_task {
             $textdata = $this->get_feedback_text_analysis($course->id, $teacherids);
             $structuredscore = $this->get_structured_grading_score($course->id);
 
+            // Admin-configurable composite sub-weights (normalised fractions).
+            $weights = \gradereport_coifish\report::get_feedback_weights();
+
             // Pre-load existing rows for this course once (keyed by userid) so the
             // per-teacher loop does an in-memory lookup instead of a query each.
             $existingbyuser = [];
@@ -98,13 +101,15 @@ class calculate_feedback_metrics extends scheduled_task {
                     'qualityscore' => 0,
                 ];
 
-                // Sub-weights: coverage 30%, depth 20%, quality 20%, personalisation 15%, structured 15%.
+                // Composite of five sub-scores, weighted by the admin-configurable
+                // weights (defaults: coverage 30, depth 20, quality 20,
+                // personalisation 15, structured 15).
                 $composite = round(
-                    $coverage['score'] * 0.30 +
-                    $text['depthscore'] * 0.20 +
-                    $text['qualityscore'] * 0.20 +
-                    $text['persscore'] * 0.15 +
-                    $structuredscore * 0.15
+                    $coverage['score'] * $weights['coverage'] +
+                    $text['depthscore'] * $weights['depth'] +
+                    $text['qualityscore'] * $weights['quality'] +
+                    $text['persscore'] * $weights['personalisation'] +
+                    $structuredscore * $weights['structured']
                 );
 
                 $record = [
@@ -173,10 +178,26 @@ class calculate_feedback_metrics extends scheduled_task {
             $ugparams = ['ugcid1' => $courseid, 'ugcid2' => $courseid];
         }
 
+        // Audio/video feedback delivered as a file attachment (no comment text)
+        // also counts as covered — otherwise a teacher who records a video on
+        // every submission would show near-zero coverage and be scored harshly.
+        $mediajoin = "
+               LEFT JOIN (
+                    SELECT itemid, COUNT(*) AS cnt
+                      FROM {files}
+                     WHERE component = 'assignfeedback_file'
+                       AND filearea = 'feedback_files'
+                       AND filename <> '.'
+                       AND (" . $DB->sql_like('mimetype', ':mfa') . " OR " . $DB->sql_like('mimetype', ':mfv') . ")
+                  GROUP BY itemid
+               ) mf ON mf.itemid = ag.id";
+        $mediaparams = ['mfa' => 'audio/%', 'mfv' => 'video/%'];
+
         $records = $DB->get_records_sql(
             "SELECT ag.grader AS userid,
                     COUNT(ag.id) AS total_graded,
-                    SUM(CASE WHEN (fc.id IS NOT NULL OR pc.cnt > 0$ugcondition) THEN 1 ELSE 0 END) AS with_feedback
+                    SUM(CASE WHEN (fc.id IS NOT NULL OR pc.cnt > 0 OR mf.cnt > 0$ugcondition)
+                        THEN 1 ELSE 0 END) AS with_feedback
                FROM {assign_grades} ag
                JOIN {assign} a ON a.id = ag.assignment
                LEFT JOIN {assignfeedback_comments} fc
@@ -188,12 +209,12 @@ class calculate_feedback_metrics extends scheduled_task {
                       FROM {assignfeedback_editpdf_cmnt}
                      WHERE draft = 0
                   GROUP BY gradeid
-               ) pc ON pc.gradeid = ag.id$ugjoin
+               ) pc ON pc.gradeid = ag.id$mediajoin$ugjoin
               WHERE a.course = :courseid
                 AND ag.grader $insql
                 AND ag.grade >= 0
            GROUP BY ag.grader",
-            array_merge(['courseid' => $courseid], $inparams, $ugparams)
+            array_merge(['courseid' => $courseid], $inparams, $mediaparams, $ugparams)
         );
 
         $result = [];
@@ -416,6 +437,18 @@ class calculate_feedback_metrics extends scheduled_task {
             }
         }
 
+        // Augment with audio/video feedback delivered as file attachments. These
+        // carry no comment text, so without this they're invisible to depth,
+        // quality, and personalisation even though they are high-effort feedback.
+        foreach ($this->get_feedback_media_files($courseid, $teacherids) as $uid => $rows) {
+            if (!isset($byteacher[$uid])) {
+                $byteacher[$uid] = [];
+            }
+            foreach ($rows as $row) {
+                $byteacher[$uid][] = $row;
+            }
+        }
+
         // Augment with gradebook-native feedback on non-assign items. This is
         // where UG's forum adapter writes its overall feedback, and the only
         // way to pick up forum / lesson / workshop feedback that isn't echoed
@@ -437,20 +470,22 @@ class calculate_feedback_metrics extends scheduled_task {
             $totalqualityscore = 0;
 
             $count = count($comments);
+            $mediaidx = 0;
             foreach ($comments as $row) {
                 $plaintext = strip_tags($row->commenttext);
                 $wordcount = str_word_count($plaintext);
-                $hasmedia = $this->has_multimedia_feedback($row->commenttext);
+                $mediabytes = isset($row->mediabytes) ? (int)$row->mediabytes : null;
 
-                // Multimedia feedback (voice notes, video, screen-shares embedded
-                // via UG, Loom, BBB, native HTML5 recorders) is high-effort and
-                // student-engaging but invisible to plain-text analysis. Without
-                // AI-based transcription we can't measure its depth directly —
-                // so we credit it with a generous floor: word-count treated as
-                // 80 (well over the 50-word depth ceiling) and full 3/3 on
-                // qualitative markers.
+                // Recorded feedback (voice notes, video, screen-shares — embedded
+                // via UG/Loom/BBB/HTML5 recorders, or attached as an audio/video
+                // file) is high-effort but invisible to plain-text analysis.
+                // Without transcription we can't measure its depth, so we credit
+                // it by quantity (each recording counts) and, where we have the
+                // file size, scale by size as a rough proxy for length; otherwise
+                // a generous floor. Qualitative markers are credited 3/3.
+                $hasmedia = ($mediabytes !== null) || $this->has_multimedia_feedback($row->commenttext);
                 if ($hasmedia) {
-                    $totalwords += max($wordcount, 80);
+                    $totalwords += $this->media_word_equivalent($mediabytes, $wordcount);
                     $totalqualityscore += 3;
                 } else {
                     $totalwords += $wordcount;
@@ -461,11 +496,10 @@ class calculate_feedback_metrics extends scheduled_task {
                 if (!isset($byassignment[$bucket])) {
                     $byassignment[$bucket] = [];
                 }
-                // Multimedia bodies should be treated as unique per recipient
-                // (the teacher recorded specifically for them), so we don't
-                // collapse them into a "duplicate" bucket via shared text.
+                // Recorded feedback is made for one student, so it is always
+                // unique (never a copy-paste) — key it uniquely per item.
                 $normalised = $hasmedia
-                    ? ('media:' . spl_object_hash((object)$row))
+                    ? ('media:' . $bucket . ':' . ($mediaidx++))
                     : strtolower(trim($plaintext));
                 $byassignment[$bucket][] = $normalised;
             }
@@ -658,6 +692,82 @@ class calculate_feedback_metrics extends scheduled_task {
             return true;
         }
         return false;
+    }
+
+    /** @var int Rough bytes per spoken word for compressed audio (size→length proxy). */
+    private const MEDIA_BYTES_PER_WORD = 7000;
+    /** @var int Minimum word-equivalent credited to a sized recording. */
+    private const MEDIA_WORD_FLOOR = 30;
+    /** @var int Maximum word-equivalent a single recording can contribute. */
+    private const MEDIA_WORD_CAP = 150;
+    /** @var int Word-equivalent for a recording whose size we can't see (embeds / S3). */
+    private const MEDIA_WORD_EMBED = 80;
+
+    /**
+     * Depth credit (in word-equivalents) for one recorded-feedback item.
+     *
+     * Without transcription a recording's depth can't be measured. Where we have
+     * the file size (uploaded media) we use it as a rough proxy for length,
+     * clamped so a tiny clip still earns partial depth and a long one doesn't run
+     * away. Where the size is unknown (embedded or S3-hosted recordings) we credit
+     * a fixed floor. Any words the teacher also typed are added on top.
+     *
+     * @param int|null $bytes File size in bytes, or null when unknown.
+     * @param int $typedwords Word count of any accompanying typed text.
+     * @return int Word-equivalent depth credit.
+     */
+    protected function media_word_equivalent(?int $bytes, int $typedwords): int {
+        if ($bytes !== null && $bytes > 0) {
+            $equiv = (int)round($bytes / self::MEDIA_BYTES_PER_WORD);
+            $equiv = max(self::MEDIA_WORD_FLOOR, min(self::MEDIA_WORD_CAP, $equiv));
+        } else {
+            $equiv = self::MEDIA_WORD_EMBED;
+        }
+        return $equiv + $typedwords;
+    }
+
+    /**
+     * Audio/video feedback delivered as assignment feedback-file attachments,
+     * grouped per teacher. Each item carries its file size so depth can be
+     * size-scaled, and is bucketed per assignment like a native comment so the
+     * personalisation analysis treats it as unique per recipient.
+     *
+     * @param int $courseid The course ID.
+     * @param array $teacherids Teacher user IDs.
+     * @return array Map of teacherid => array of stdClass{commenttext, bucketid, mediabytes}.
+     */
+    protected function get_feedback_media_files(int $courseid, array $teacherids): array {
+        global $DB;
+
+        [$insql, $inparams] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'fmf');
+        $rows = $DB->get_records_sql(
+            "SELECT f.id, ag.grader AS userid, ag.assignment AS bucketid, f.filesize
+               FROM {files} f
+               JOIN {assign_grades} ag ON ag.id = f.itemid
+               JOIN {assign} a ON a.id = ag.assignment
+              WHERE f.component = 'assignfeedback_file'
+                AND f.filearea = 'feedback_files'
+                AND f.filename <> '.'
+                AND (" . $DB->sql_like('f.mimetype', ':mfa') . " OR " . $DB->sql_like('f.mimetype', ':mfv') . ")
+                AND a.course = :courseid
+                AND ag.grader $insql
+                AND ag.grade >= 0",
+            array_merge(['courseid' => $courseid, 'mfa' => 'audio/%', 'mfv' => 'video/%'], $inparams)
+        );
+
+        $result = [];
+        foreach ($rows as $row) {
+            $uid = (int)$row->userid;
+            if (!isset($result[$uid])) {
+                $result[$uid] = [];
+            }
+            $result[$uid][] = (object)[
+                'commenttext' => '',
+                'bucketid' => 'assign:' . $row->bucketid,
+                'mediabytes' => (int)$row->filesize,
+            ];
+        }
+        return $result;
     }
 
     /**

@@ -503,4 +503,63 @@ final class report_test extends \advanced_testcase {
             $this->assertEqualsWithDelta(3 * $day, $secs, 1.0, 'an integrity referral before grading should pause the clock');
         }
     }
+
+    /**
+     * Feedback weights default to the documented split and normalise to 1.
+     */
+    public function test_feedback_weights_default(): void {
+        $this->resetAfterTest();
+        $w = report::get_feedback_weights();
+        $this->assertEqualsWithDelta(1.0, array_sum($w), 0.0001);
+        $this->assertEqualsWithDelta(0.30, $w['coverage'], 0.0001);
+        $this->assertEqualsWithDelta(0.15, $w['structured'], 0.0001);
+    }
+
+    /**
+     * Configured weights are honoured and normalised even when they don't sum to 100.
+     */
+    public function test_feedback_weights_custom_normalise(): void {
+        $this->resetAfterTest();
+        set_config('feedback_weight_coverage', 50, 'gradereport_coifish');
+        set_config('feedback_weight_depth', 50, 'gradereport_coifish');
+        set_config('feedback_weight_quality', 0, 'gradereport_coifish');
+        set_config('feedback_weight_personalisation', 0, 'gradereport_coifish');
+        set_config('feedback_weight_structured', 0, 'gradereport_coifish');
+        $w = report::get_feedback_weights();
+        $this->assertEqualsWithDelta(0.5, $w['coverage'], 0.0001);
+        $this->assertEqualsWithDelta(0.5, $w['depth'], 0.0001);
+        $this->assertEqualsWithDelta(0.0, $w['quality'], 0.0001);
+        $this->assertEqualsWithDelta(1.0, array_sum($w), 0.0001);
+    }
+
+    /**
+     * Zeroing every weight falls back to the defaults rather than collapsing to 0.
+     */
+    public function test_feedback_weights_all_zero_falls_back(): void {
+        $this->resetAfterTest();
+        foreach (['coverage', 'depth', 'quality', 'personalisation', 'structured'] as $d) {
+            set_config('feedback_weight_' . $d, 0, 'gradereport_coifish');
+        }
+        $w = report::get_feedback_weights();
+        $this->assertEqualsWithDelta(1.0, array_sum($w), 0.0001);
+        $this->assertEqualsWithDelta(0.30, $w['coverage'], 0.0001);
+    }
+
+    /**
+     * Recorded-feedback depth credit: floor/cap, size scaling, and embed floor.
+     */
+    public function test_media_word_equivalent(): void {
+        $task = new \gradereport_coifish\task\calculate_feedback_metrics();
+        $m = new \ReflectionMethod($task, 'media_word_equivalent');
+        $m->setAccessible(true);
+
+        // Unknown size (embedded / S3) -> fixed floor (80), plus any typed words.
+        $this->assertEquals(80, $m->invoke($task, null, 0));
+        $this->assertEquals(90, $m->invoke($task, null, 10));
+        // Tiny file clamps up to the floor; huge file clamps down to the cap.
+        $this->assertEquals(30, $m->invoke($task, 1000, 0));
+        $this->assertEquals(150, $m->invoke($task, 50000000, 0));
+        // ~350KB at ~7KB/word lands around 50 word-equivalents.
+        $this->assertEqualsWithDelta(50, $m->invoke($task, 350000, 0), 1);
+    }
 }

@@ -441,4 +441,26 @@ if ($ADMIN->fulltree) {
             '90' => get_string('setting_followup_90', 'gradereport_coifish'),
         ]
     ));
+
+    // Feedback-quality composite weights. Each slider sets the relative weight
+    // of a sub-score; they are normalised at calculation time, so they need not
+    // sum to 100.
+    $settings->add(new admin_setting_heading(
+        'gradereport_coifish/feedback_weights_heading',
+        get_string('setting_feedback_weights_heading', 'gradereport_coifish'),
+        get_string('setting_feedback_weights_heading_desc', 'gradereport_coifish')
+    ));
+
+    foreach (\gradereport_coifish\report::FEEDBACK_WEIGHT_DEFAULTS as $dim => $default) {
+        $settings->add(new gradereport_coifish_admin_setting_configslider(
+            'gradereport_coifish/feedback_weight_' . $dim,
+            get_string('setting_feedback_weight_' . $dim, 'gradereport_coifish'),
+            get_string('setting_feedback_weight_' . $dim . '_desc', 'gradereport_coifish'),
+            $default,
+            0,
+            100,
+            5,
+            '%'
+        ));
+    }
 }
