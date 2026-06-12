@@ -559,7 +559,7 @@ final class report_test extends \advanced_testcase {
         // Tiny file clamps up to the floor; huge file clamps down to the cap.
         $this->assertEquals(30, $m->invoke($task, 1000, 0));
         $this->assertEquals(150, $m->invoke($task, 50000000, 0));
-        // ~350KB at ~7KB/word lands around 50 word-equivalents.
+        // A 350KB file at ~7KB/word lands around 50 word-equivalents.
         $this->assertEqualsWithDelta(50, $m->invoke($task, 350000, 0), 1);
     }
 }
