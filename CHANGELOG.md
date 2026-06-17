@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.0] - 2026-06-17
+
+### Added
+- **Assignment-level feedback-quality breakdown.** A new `\gradereport_coifish\report::get_assignment_feedback_breakdown($courseid, $teacherid)` decomposes a lecturer's composite feedback score down to the individual assignments they graded, so a coordinator can tell which assignments drag the score down — distinguishing an assignment that needs redesign from a lecturer who needs support. Each row reports coverage, depth, quality, personalisation, the weighted composite, and the graded/with-feedback counts, ordered worst-composite-first. The four text sub-scores are recomputed per assignment with the same formulas as the cohort metric (shared via a new `feedback_scorer` helper so they cannot drift), and the course-level structured-grading score is folded in via the configured weights. Every per-assignment aggregate is produced by a query grouped by the assign instance — there is no per-assignment query loop.
+
+### Changed
+- **Feedback-scoring primitives are now a shared public API.** The cohort task's scoring primitives (`has_multimedia_feedback`, `media_word_equivalent`, `score_comment_quality`, `get_structured_grading_score`) are now `public static` and called directly by the assignment-level `feedback_scorer`, replacing a reflection-based bridge into the task's internals. `report::get_unifiedgrader_enabled_modnames()` is now memoised per request (it previously re-ran `table_exists` on every call, twice per assignment-breakdown render).
+
 ## [2.7.2] - 2026-06-12
 
 ### Changed

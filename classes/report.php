@@ -171,8 +171,15 @@ class report extends \grade_report {
      */
     public static function get_unifiedgrader_enabled_modnames(): array {
         global $DB;
+        // The UG install + its enable_* settings are invariant for the request,
+        // so memoise: this is probed twice per assignment-feedback breakdown and
+        // several times per cohort run, and table_exists() is not free.
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
         if (!$DB->get_manager()->table_exists('local_unifiedgrader_scomm')) {
-            return [];
+            return $cache = [];
         }
         $enabled = [];
         foreach (['assign', 'quiz', 'forum', 'bigbluebuttonbn'] as $modname) {
@@ -180,7 +187,7 @@ class report extends \grade_report {
                 $enabled[] = $modname;
             }
         }
-        return $enabled;
+        return $cache = $enabled;
     }
 
     /**
@@ -260,6 +267,270 @@ class report extends \grade_report {
             $parts[] = $label . ' ' . round($fraction * 100) . '%';
         }
         return implode(', ', $parts);
+    }
+
+    /**
+     * Per-assignment feedback-quality breakdown for one teacher in one course.
+     *
+     * Decomposes the composite feedback score (the same one the
+     * {@see \gradereport_coifish\task\calculate_feedback_metrics} task caches per
+     * teacher) down to the individual assign activities the teacher graded, so a
+     * coordinator can tell which assignments drag a lecturer's score down — i.e.
+     * spot assignments that need redesign versus a lecturer who needs support.
+     *
+     * The four text-derived sub-scores (coverage, depth, quality, personalisation)
+     * are recomputed per assignment with the SAME formulas as the cohort task,
+     * reusing its scoring primitives so the two never drift. The structured-grading
+     * sub-score is course-level, so it is the same for every row and is folded into
+     * each row's composite via the admin-configurable weights.
+     *
+     * Efficiency: every per-assignment aggregate comes from a query GROUPED BY the
+     * assign instance (never one query per assignment). See {@see get_assignment_feedback_coverage()},
+     * {@see get_assignment_feedback_text()}, and the single cmid/name map below.
+     *
+     * @param int $courseid The course ID.
+     * @param int $teacherid The grader's user ID.
+     * @return array List of rows (one per assign the teacher graded), each an assoc
+     *               array with keys: cmid, name, coverage, depth, quality,
+     *               personalisation, composite, ngraded, nwithfeedback. Ordered by
+     *               composite ascending (worst first).
+     */
+    public static function get_assignment_feedback_breakdown(int $courseid, int $teacherid): array {
+        global $DB;
+
+        // Grouped coverage: ngraded + nwithfeedback per assign instance (one query).
+        $coverage = self::get_assignment_feedback_coverage($courseid, $teacherid);
+        if (empty($coverage)) {
+            return [];
+        }
+
+        // Grouped text analysis: depth/quality/personalisation per assign instance
+        // (a handful of grouped queries, assembled in PHP — no per-assign query).
+        $text = self::get_assignment_feedback_text($courseid, $teacherid);
+
+        // Course-level structured-grading score and composite weights (fetched once).
+        $structured = feedback_scorer::structured_score($courseid);
+        $weights = self::get_feedback_weights();
+
+        // One query maps every graded assign instance to its cmid and name.
+        [$insql, $inparams] = $DB->get_in_or_equal(array_keys($coverage), SQL_PARAMS_NAMED, 'afb');
+        $cmrows = $DB->get_records_sql(
+            "SELECT a.id AS assignid, cm.id AS cmid, a.name
+               FROM {assign} a
+               JOIN {course_modules} cm ON cm.instance = a.id
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+              WHERE a.course = :courseid
+                AND a.id $insql",
+            array_merge(['courseid' => $courseid], $inparams)
+        );
+
+        $rows = [];
+        foreach ($cmrows as $cm) {
+            $assignid = (int)$cm->assignid;
+            $cov = $coverage[$assignid];
+            $total = (int)$cov['total'];
+            $withfb = (int)$cov['withfeedback'];
+
+            $coveragescore = $total > 0 ? min(100, (int)round(($withfb / $total) / 0.80 * 100)) : 0;
+
+            $t = $text[$assignid] ?? ['depth' => 0, 'quality' => 0, 'personalisation' => 0];
+            $composite = (int)round(
+                $coveragescore * $weights['coverage'] +
+                $t['depth'] * $weights['depth'] +
+                $t['quality'] * $weights['quality'] +
+                $t['personalisation'] * $weights['personalisation'] +
+                $structured * $weights['structured']
+            );
+
+            $rows[] = [
+                'cmid' => (int)$cm->cmid,
+                'name' => format_string($cm->name),
+                'coverage' => $coveragescore,
+                'depth' => (int)$t['depth'],
+                'quality' => (int)$t['quality'],
+                'personalisation' => (int)$t['personalisation'],
+                'composite' => $composite,
+                'ngraded' => $total,
+                'nwithfeedback' => $withfb,
+            ];
+        }
+
+        // Worst first, so the assignments that need attention surface at the top.
+        usort($rows, function ($a, $b) {
+            return $a['composite'] <=> $b['composite'];
+        });
+        return $rows;
+    }
+
+    /**
+     * Per-assign coverage counts (graded + with-feedback) for one teacher.
+     *
+     * One query, GROUPED BY the assign instance. Counts each graded item (grade
+     * >= 0) and flags it as covered when it carries any feedback signal: a written
+     * comment, a non-draft editpdf annotation, an audio/video feedback file, or a
+     * Unified Grader submission-comment/annotation (only when UG is enabled for
+     * assignments). Mirrors the cohort task's coverage signals exactly.
+     *
+     * @param int $courseid The course ID.
+     * @param int $teacherid The grader's user ID.
+     * @return array Map of assignid => ['total' => int, 'withfeedback' => int].
+     */
+    protected static function get_assignment_feedback_coverage(int $courseid, int $teacherid): array {
+        global $DB;
+
+        // Unified Grader scomm/annot signals — only when UG handles assignments.
+        $ugjoin = '';
+        $ugcondition = '';
+        $ugparams = [];
+        if (in_array('assign', self::get_unifiedgrader_enabled_modnames(), true)) {
+            $ugjoin = "
+               LEFT JOIN (
+                    SELECT DISTINCT cm.instance AS assignid, s.userid, s.authorid
+                      FROM {local_unifiedgrader_scomm} s
+                      JOIN {course_modules} cm ON cm.id = s.cmid
+                      JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+                     WHERE cm.course = :ugcid1
+               ) ugs ON ugs.assignid = ag.assignment AND ugs.userid = ag.userid AND ugs.authorid = ag.grader
+               LEFT JOIN (
+                    SELECT DISTINCT cm.instance AS assignid, an.userid, an.authorid
+                      FROM {local_unifiedgrader_annot} an
+                      JOIN {course_modules} cm ON cm.id = an.cmid
+                      JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+                     WHERE cm.course = :ugcid2
+               ) uga ON uga.assignid = ag.assignment AND uga.userid = ag.userid AND uga.authorid = ag.grader";
+            $ugcondition = " OR ugs.userid IS NOT NULL OR uga.userid IS NOT NULL";
+            $ugparams = ['ugcid1' => $courseid, 'ugcid2' => $courseid];
+        }
+
+        // Audio/video feedback delivered as a file attachment also counts as covered.
+        $mediajoin = "
+               LEFT JOIN (
+                    SELECT itemid, COUNT(*) AS cnt
+                      FROM {files}
+                     WHERE component = 'assignfeedback_file'
+                       AND filearea = 'feedback_files'
+                       AND filename <> '.'
+                       AND (" . $DB->sql_like('mimetype', ':mfa') . " OR " . $DB->sql_like('mimetype', ':mfv') . ")
+                  GROUP BY itemid
+               ) mf ON mf.itemid = ag.id";
+
+        $records = $DB->get_records_sql(
+            "SELECT ag.assignment AS assignid,
+                    COUNT(ag.id) AS total_graded,
+                    SUM(CASE WHEN (fc.id IS NOT NULL OR pc.cnt > 0 OR mf.cnt > 0$ugcondition)
+                        THEN 1 ELSE 0 END) AS with_feedback
+               FROM {assign_grades} ag
+               JOIN {assign} a ON a.id = ag.assignment
+               LEFT JOIN {assignfeedback_comments} fc
+                    ON fc.grade = ag.id
+                    AND fc.commenttext IS NOT NULL
+                    AND fc.commenttext != ''
+               LEFT JOIN (
+                    SELECT gradeid, COUNT(*) AS cnt
+                      FROM {assignfeedback_editpdf_cmnt}
+                     WHERE draft = 0
+                  GROUP BY gradeid
+               ) pc ON pc.gradeid = ag.id$mediajoin$ugjoin
+              WHERE a.course = :courseid
+                AND ag.grader = :grader
+                AND ag.grade >= 0
+           GROUP BY ag.assignment",
+            array_merge(
+                ['courseid' => $courseid, 'grader' => $teacherid, 'mfa' => 'audio/%', 'mfv' => 'video/%'],
+                $ugparams
+            )
+        );
+
+        $result = [];
+        foreach ($records as $row) {
+            $result[(int)$row->assignid] = [
+                'total' => (int)$row->total_graded,
+                'withfeedback' => (int)$row->with_feedback,
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Per-assign depth/quality/personalisation scores for one teacher.
+     *
+     * Gathers the teacher's feedback artifacts bucketed by assign instance using a
+     * small set of GROUPED queries (native comments, audio/video feedback files,
+     * and — when enabled — Unified Grader submission comments), then runs the same
+     * per-comment scoring the cohort task uses, reusing its scoring primitives so
+     * the formulas never diverge. No query is issued inside the per-assignment loop.
+     *
+     * @param int $courseid The course ID.
+     * @param int $teacherid The grader's user ID.
+     * @return array Map of assignid => ['depth' => int, 'quality' => int, 'personalisation' => int].
+     */
+    protected static function get_assignment_feedback_text(int $courseid, int $teacherid): array {
+        global $DB;
+
+        // Bucket all artifacts per assign instance: each is {text, media, key}.
+        $byassign = [];
+
+        // Native assignment comments (one grouped query).
+        $crows = $DB->get_records_sql(
+            "SELECT fc.id, ag.assignment AS assignid, fc.commenttext
+               FROM {assignfeedback_comments} fc
+               JOIN {assign_grades} ag ON ag.id = fc.grade
+               JOIN {assign} a ON a.id = ag.assignment
+              WHERE a.course = :courseid
+                AND ag.grader = :grader
+                AND ag.grade >= 0
+                AND fc.commenttext IS NOT NULL
+                AND fc.commenttext != ''",
+            ['courseid' => $courseid, 'grader' => $teacherid]
+        );
+        foreach ($crows as $row) {
+            $byassign[(int)$row->assignid][] = ['text' => $row->commenttext, 'media' => null];
+        }
+
+        // Audio/video feedback files (one grouped query); size proxies depth.
+        $mrows = $DB->get_records_sql(
+            "SELECT f.id, ag.assignment AS assignid, f.filesize
+               FROM {files} f
+               JOIN {assign_grades} ag ON ag.id = f.itemid
+               JOIN {assign} a ON a.id = ag.assignment
+              WHERE f.component = 'assignfeedback_file'
+                AND f.filearea = 'feedback_files'
+                AND f.filename <> '.'
+                AND (" . $DB->sql_like('f.mimetype', ':mfa') . " OR " . $DB->sql_like('f.mimetype', ':mfv') . ")
+                AND a.course = :courseid
+                AND ag.grader = :grader
+                AND ag.grade >= 0",
+            ['courseid' => $courseid, 'grader' => $teacherid, 'mfa' => 'audio/%', 'mfv' => 'video/%']
+        );
+        foreach ($mrows as $row) {
+            $byassign[(int)$row->assignid][] = ['text' => '', 'media' => (int)$row->filesize];
+        }
+
+        // Unified Grader submission comments on assignments (one grouped query),
+        // only when UG is enabled for assignments.
+        if (in_array('assign', self::get_unifiedgrader_enabled_modnames(), true)) {
+            $urows = $DB->get_records_sql(
+                "SELECT s.id, cm.instance AS assignid, s.content AS commenttext
+                   FROM {local_unifiedgrader_scomm} s
+                   JOIN {course_modules} cm ON cm.id = s.cmid
+                   JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+                  WHERE cm.course = :courseid
+                    AND s.authorid = :grader
+                    AND s.content IS NOT NULL
+                    AND s.content != ''",
+                ['courseid' => $courseid, 'grader' => $teacherid]
+            );
+            foreach ($urows as $row) {
+                $byassign[(int)$row->assignid][] = ['text' => $row->commenttext, 'media' => null];
+            }
+        }
+
+        // Score each assignment's bucket with the cohort task's primitives.
+        $result = [];
+        foreach ($byassign as $assignid => $artifacts) {
+            $result[$assignid] = feedback_scorer::score_bucket($artifacts);
+        }
+        return $result;
     }
 
     /**

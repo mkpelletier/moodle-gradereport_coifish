@@ -562,4 +562,86 @@ final class report_test extends \advanced_testcase {
         // A 350KB file at ~7KB/word lands around 50 word-equivalents.
         $this->assertEqualsWithDelta(50, $m->invoke($task, 350000, 0), 1);
     }
+
+    /**
+     * The assignment-level breakdown reports per-assign coverage/feedback counts
+     * for the grading teacher and composes the row score from the sub-scores and
+     * the configured weights and the course-level structured score.
+     */
+    public function test_assignment_feedback_breakdown(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $s1 = $generator->create_user();
+        $s2 = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $generator->enrol_user($s1->id, $course->id, 'student');
+        $generator->enrol_user($s2->id, $course->id, 'student');
+
+        $assign = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay 1']);
+        // A second assignment the teacher never grades — must NOT appear.
+        $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay 2']);
+
+        // Two graded items by this teacher; only the first carries a comment.
+        $g1 = $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign->id,
+            'userid' => $s1->id,
+            'grader' => $teacher->id,
+            'grade' => 80.0,
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+            'attemptnumber' => 0,
+        ]);
+        $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign->id,
+            'userid' => $s2->id,
+            'grader' => $teacher->id,
+            'grade' => 65.0,
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+            'attemptnumber' => 0,
+        ]);
+        $DB->insert_record('assignfeedback_comments', (object)[
+            'assignment' => $assign->id,
+            'grade' => $g1,
+            'commenttext' => 'Have you considered revising the introduction to clarify your thesis?',
+            'commentformat' => 1,
+        ]);
+
+        $rows = report::get_assignment_feedback_breakdown($course->id, $teacher->id);
+
+        // Exactly one row — only the assignment the teacher actually graded.
+        $this->assertCount(1, $rows);
+        $row = $rows[0];
+        $this->assertSame((int)$assign->cmid, $row['cmid']);
+        $this->assertSame('Essay 1', $row['name']);
+
+        // Two graded, one with feedback -> coverage = round((1/2)/0.80*100) = 63.
+        $this->assertSame(2, $row['ngraded']);
+        $this->assertSame(1, $row['nwithfeedback']);
+        $this->assertSame(63, $row['coverage']);
+
+        // Composite must be the weighted blend of the four sub-scores plus the
+        // course-level structured score — proving the weights are applied.
+        $weights = report::get_feedback_weights();
+        $scorer = new \gradereport_coifish\feedback_scorer();
+        $structured = $scorer->structured_score($course->id);
+        $expected = (int)round(
+            $row['coverage'] * $weights['coverage'] +
+            $row['depth'] * $weights['depth'] +
+            $row['quality'] * $weights['quality'] +
+            $row['personalisation'] * $weights['personalisation'] +
+            $structured * $weights['structured']
+        );
+        $this->assertSame($expected, $row['composite']);
+
+        // Every advertised key is present with the right type.
+        foreach (['cmid', 'name', 'coverage', 'depth', 'quality', 'personalisation',
+                  'composite', 'ngraded', 'nwithfeedback'] as $key) {
+            $this->assertArrayHasKey($key, $row);
+        }
+    }
 }

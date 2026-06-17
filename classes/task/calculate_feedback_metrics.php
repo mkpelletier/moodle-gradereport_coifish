@@ -81,7 +81,7 @@ class calculate_feedback_metrics extends scheduled_task {
             // Calculate metrics for each teacher.
             $coveragedata = $this->get_feedback_coverage($course->id, $teacherids);
             $textdata = $this->get_feedback_text_analysis($course->id, $teacherids);
-            $structuredscore = $this->get_structured_grading_score($course->id);
+            $structuredscore = self::get_structured_grading_score($course->id);
 
             // Admin-configurable composite sub-weights (normalised fractions).
             $weights = \gradereport_coifish\report::get_feedback_weights();
@@ -483,13 +483,13 @@ class calculate_feedback_metrics extends scheduled_task {
                 // it by quantity (each recording counts) and, where we have the
                 // file size, scale by size as a rough proxy for length; otherwise
                 // a generous floor. Qualitative markers are credited 3/3.
-                $hasmedia = ($mediabytes !== null) || $this->has_multimedia_feedback($row->commenttext);
+                $hasmedia = ($mediabytes !== null) || self::has_multimedia_feedback($row->commenttext);
                 if ($hasmedia) {
-                    $totalwords += $this->media_word_equivalent($mediabytes, $wordcount);
+                    $totalwords += self::media_word_equivalent($mediabytes, $wordcount);
                     $totalqualityscore += 3;
                 } else {
                     $totalwords += $wordcount;
-                    $totalqualityscore += $this->score_comment_quality($plaintext);
+                    $totalqualityscore += self::score_comment_quality($plaintext);
                 }
 
                 $bucket = $row->bucketid;
@@ -676,7 +676,7 @@ class calculate_feedback_metrics extends scheduled_task {
      * @param string $html The raw HTML body of the feedback record.
      * @return bool
      */
-    protected function has_multimedia_feedback(string $html): bool {
+    public static function has_multimedia_feedback(string $html): bool {
         if ($html === '' || $html === null) {
             return false;
         }
@@ -716,7 +716,7 @@ class calculate_feedback_metrics extends scheduled_task {
      * @param int $typedwords Word count of any accompanying typed text.
      * @return int Word-equivalent depth credit.
      */
-    protected function media_word_equivalent(?int $bytes, int $typedwords): int {
+    public static function media_word_equivalent(?int $bytes, int $typedwords): int {
         if ($bytes !== null && $bytes > 0) {
             $equiv = (int)round($bytes / self::MEDIA_BYTES_PER_WORD);
             $equiv = max(self::MEDIA_WORD_FLOOR, min(self::MEDIA_WORD_CAP, $equiv));
@@ -776,7 +776,7 @@ class calculate_feedback_metrics extends scheduled_task {
      * @param string $plaintext Stripped feedback text.
      * @return int Score from 0 to 3.
      */
-    protected function score_comment_quality(string $plaintext): int {
+    public static function score_comment_quality(string $plaintext): int {
         $score = 0;
         $lower = strtolower($plaintext);
 
@@ -831,7 +831,7 @@ class calculate_feedback_metrics extends scheduled_task {
      * @param int $courseid The course ID.
      * @return int Score 0-100.
      */
-    protected function get_structured_grading_score(int $courseid): int {
+    public static function get_structured_grading_score(int $courseid): int {
         global $DB;
 
         // Total assignments in the course.
