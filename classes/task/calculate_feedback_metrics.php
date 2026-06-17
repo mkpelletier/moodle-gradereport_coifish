@@ -140,6 +140,49 @@ class calculate_feedback_metrics extends scheduled_task {
     }
 
     /**
+     * Assign instance ids that the sibling local_coifish plugin marks as
+     * "not feedback-relevant" (complete/incomplete self-study activities that
+     * never receive written feedback).
+     *
+     * The shared config key {@see local_coifish/feedback_excluded_cmids} holds a
+     * comma-separated list of `course_modules.id`. We read it dependency-free
+     * (the key is absent/empty when local_coifish is not installed, in which case
+     * nothing is excluded) and map the cmids to assign instance ids once, so
+     * callers can drop them from the coverage denominator and the text analysis.
+     *
+     * @return array List of assign instance ids (may be empty).
+     */
+    protected function get_feedback_excluded_assignids(): array {
+        global $DB;
+
+        $raw = get_config('local_coifish', 'feedback_excluded_cmids');
+        if ($raw === false || trim((string)$raw) === '') {
+            return [];
+        }
+
+        $cmids = [];
+        foreach (explode(',', (string)$raw) as $token) {
+            $token = trim($token);
+            if ($token !== '' && ctype_digit($token)) {
+                $cmids[(int)$token] = (int)$token;
+            }
+        }
+        if (empty($cmids)) {
+            return [];
+        }
+
+        [$insql, $inparams] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, 'exc');
+        $instances = $DB->get_fieldset_sql(
+            "SELECT cm.instance
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+              WHERE cm.id $insql",
+            $inparams
+        );
+        return array_values(array_unique(array_map('intval', $instances)));
+    }
+
+    /**
      * Calculate feedback coverage per teacher: % of graded items with written comments.
      *
      * @param int $courseid The course ID.
@@ -193,6 +236,16 @@ class calculate_feedback_metrics extends scheduled_task {
                ) mf ON mf.itemid = ag.id";
         $mediaparams = ['mfa' => 'audio/%', 'mfv' => 'video/%'];
 
+        // Exclude assignments the coordinator marked as not feedback-relevant, so
+        // they contribute to neither the denominator nor the with-feedback count.
+        $exclsql = '';
+        $exclparams = [];
+        $excludedassignids = $this->get_feedback_excluded_assignids();
+        if (!empty($excludedassignids)) {
+            [$notin, $exclparams] = $DB->get_in_or_equal($excludedassignids, SQL_PARAMS_NAMED, 'covexcl', false);
+            $exclsql = " AND a.id $notin";
+        }
+
         $records = $DB->get_records_sql(
             "SELECT ag.grader AS userid,
                     COUNT(ag.id) AS total_graded,
@@ -212,9 +265,9 @@ class calculate_feedback_metrics extends scheduled_task {
                ) pc ON pc.gradeid = ag.id$mediajoin$ugjoin
               WHERE a.course = :courseid
                 AND ag.grader $insql
-                AND ag.grade >= 0
+                AND ag.grade >= 0$exclsql
            GROUP BY ag.grader",
-            array_merge(['courseid' => $courseid], $inparams, $mediaparams, $ugparams)
+            array_merge(['courseid' => $courseid], $inparams, $mediaparams, $ugparams, $exclparams)
         );
 
         $result = [];
@@ -401,6 +454,16 @@ class calculate_feedback_metrics extends scheduled_task {
 
         [$insql, $inparams] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'td');
 
+        // Drop assignments the coordinator marked as not feedback-relevant so
+        // their text never reaches the depth/quality/personalisation analysis.
+        $exclsql = '';
+        $exclparams = [];
+        $excludedassignids = $this->get_feedback_excluded_assignids();
+        if (!empty($excludedassignids)) {
+            [$notin, $exclparams] = $DB->get_in_or_equal($excludedassignids, SQL_PARAMS_NAMED, 'txtexcl', false);
+            $exclsql = " AND a.id $notin";
+        }
+
         $records = $DB->get_records_sql(
             "SELECT fc.id, ag.grader AS userid, ag.assignment AS bucketid, fc.commenttext
                FROM {assignfeedback_comments} fc
@@ -410,8 +473,8 @@ class calculate_feedback_metrics extends scheduled_task {
                 AND ag.grader $insql
                 AND ag.grade >= 0
                 AND fc.commenttext IS NOT NULL
-                AND fc.commenttext != ''",
-            array_merge(['courseid' => $courseid], $inparams)
+                AND fc.commenttext != ''$exclsql",
+            array_merge(['courseid' => $courseid], $inparams, $exclparams)
         );
 
         // Group by teacher.

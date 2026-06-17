@@ -507,13 +507,23 @@ class report extends \grade_report {
         }
 
         // Unified Grader submission comments on assignments (one grouped query),
-        // only when UG is enabled for assignments.
+        // only when UG is enabled for assignments. Joined to assign_grades on the
+        // matching (assignment, student, grader) graded item so the text source is
+        // consistent with coverage: a UG comment is only analysed when it backs a
+        // graded row this teacher actually graded. Without this, depth/quality
+        // would count UG comments that coverage never credits, producing an
+        // assignment with 0% coverage yet non-zero depth.
         if (in_array('assign', self::get_unifiedgrader_enabled_modnames(), true)) {
             $urows = $DB->get_records_sql(
                 "SELECT s.id, cm.instance AS assignid, s.content AS commenttext
                    FROM {local_unifiedgrader_scomm} s
                    JOIN {course_modules} cm ON cm.id = s.cmid
                    JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
+                   JOIN {assign_grades} ag
+                        ON ag.assignment = cm.instance
+                        AND ag.userid = s.userid
+                        AND ag.grader = s.authorid
+                        AND ag.grade >= 0
                   WHERE cm.course = :courseid
                     AND s.authorid = :grader
                     AND s.content IS NOT NULL

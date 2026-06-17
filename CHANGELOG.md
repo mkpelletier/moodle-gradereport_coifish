@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.1] - 2026-06-17
+
+### Changed
+- **Cohort feedback coverage now honours the coordinator's "not feedback-relevant" exclusion list.** Assignments that a coordinator marks in the sibling `local_coifish` plugin as never receiving written feedback (complete/incomplete self-study activities) are read from the shared config key `local_coifish/feedback_excluded_cmids` and dropped from a lecturer's cohort coverage — from both the denominator (graded items) and the depth/quality/personalisation text analysis. The marked `course_modules.id` values are mapped to assign instance ids once and applied via a single `NOT IN` clause on each query, so an excluded assignment contributes nothing. Coverage now reflects only assignments where feedback is expected, and refreshes on the next scheduled task run. When the list is empty (or `local_coifish` is absent) nothing changes.
+
+### Fixed
+- **Unified Grader feedback no longer inflates a lecturer's per-assignment depth without backing coverage.** The assignment-level breakdown gathered UG submission comments by cmid and author with no grade filter and no per-student match, while coverage only credited a UG comment that matched a graded student row. An assignment could therefore show 0% coverage yet a non-zero depth/quality. The text source is now joined to `assign_grades` on the matching `(assignment, student, grader)` graded item (`grade >= 0`), keeping it a single grouped query, so the depth/quality source is consistent with coverage — an assignment with 0 coverage now shows 0 depth.
+
 ## [2.8.0] - 2026-06-17
 
 ### Added

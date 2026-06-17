@@ -644,4 +644,175 @@ final class report_test extends \advanced_testcase {
             $this->assertArrayHasKey($key, $row);
         }
     }
+
+    /**
+     * Invoke a protected method on the cohort feedback-metrics task via reflection.
+     *
+     * @param \gradereport_coifish\task\calculate_feedback_metrics $task The task instance.
+     * @param string $method The protected method name.
+     * @param array $args Positional arguments.
+     * @return mixed The method's return value.
+     */
+    protected function call_task_protected(
+        \gradereport_coifish\task\calculate_feedback_metrics $task,
+        string $method,
+        array $args = []
+    ) {
+        $ref = new \ReflectionMethod(\gradereport_coifish\task\calculate_feedback_metrics::class, $method);
+        $ref->setAccessible(true);
+        return $ref->invokeArgs($task, $args);
+    }
+
+    /**
+     * The cohort coverage denominator must drop assignments the sibling
+     * local_coifish plugin marks as "not feedback-relevant" via the shared
+     * config key local_coifish/feedback_excluded_cmids. Grading two assignments
+     * gives a denominator of 2; excluding one assignment's cmid shrinks it to 1
+     * (the remaining graded item) and lifts the coverage percentage.
+     */
+    public function test_feedback_coverage_excludes_marked_assignments(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $student = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $generator->enrol_user($student->id, $course->id, 'student');
+
+        $assign1 = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay 1']);
+        $assign2 = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Self-study']);
+
+        // Teacher grades both assignments. Assign 1 carries a comment (covered);
+        // assign 2 carries none (the self-study activity that never gets feedback).
+        $g1 = $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign1->id,
+            'userid' => $student->id,
+            'grader' => $teacher->id,
+            'grade' => 80.0,
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+            'attemptnumber' => 0,
+        ]);
+        $DB->insert_record('assignfeedback_comments', (object)[
+            'assignment' => $assign1->id,
+            'grade' => $g1,
+            'commenttext' => 'Have you considered revising the introduction to clarify your thesis?',
+            'commentformat' => 1,
+        ]);
+        $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign2->id,
+            'userid' => $student->id,
+            'grader' => $teacher->id,
+            'grade' => 100.0,
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+            'attemptnumber' => 0,
+        ]);
+
+        $task = new \gradereport_coifish\task\calculate_feedback_metrics();
+
+        // Baseline: both graded items count, so the denominator is 2.
+        set_config('feedback_excluded_cmids', '', 'local_coifish');
+        $before = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+        $this->assertSame(2, (int)$before[$teacher->id]['total']);
+        $this->assertSame(1, (int)$before[$teacher->id]['withfeedback']);
+
+        // Exclude the self-study assignment's cmid.
+        set_config('feedback_excluded_cmids', (string)$assign2->cmid, 'local_coifish');
+        $after = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+
+        // The denominator shrank to the single feedback-relevant graded item, and
+        // since it carries feedback the coverage percentage rose to 100%.
+        $this->assertSame(1, (int)$after[$teacher->id]['total']);
+        $this->assertSame(1, (int)$after[$teacher->id]['withfeedback']);
+        $this->assertGreaterThan($before[$teacher->id]['score'], $after[$teacher->id]['score']);
+
+        // A non-numeric / unknown token must be ignored, leaving the list empty.
+        set_config('feedback_excluded_cmids', 'not-a-cmid', 'local_coifish');
+        $ignored = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+        $this->assertSame(2, (int)$ignored[$teacher->id]['total']);
+    }
+
+    /**
+     * The per-assignment text source must be consistent with coverage: a Unified
+     * Grader submission comment is only analysed for depth/quality when it backs a
+     * graded row this teacher graded (matching student + author, grade >= 0). A UG
+     * comment about a NON-graded student must not produce depth on an assignment
+     * whose coverage is 0 — the old "0% coverage yet non-zero depth" bug.
+     */
+    public function test_assignment_text_ug_source_matches_coverage(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        if (!$DB->get_manager()->table_exists('local_unifiedgrader_scomm')) {
+            $this->markTestSkipped('Unified Grader not installed.');
+        }
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $graded = $generator->create_user();
+        $ungraded = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $generator->enrol_user($graded->id, $course->id, 'student');
+        $generator->enrol_user($ungraded->id, $course->id, 'student');
+
+        $assign = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay 1']);
+
+        // UG must be enabled for assignments for the UG text source to be consulted.
+        set_config('enable_assign', 1, 'local_unifiedgrader');
+
+        // One graded row, for $graded, with NO feedback of any kind -> coverage 0.
+        $DB->insert_record('assign_grades', (object)[
+            'assignment' => $assign->id,
+            'userid' => $graded->id,
+            'grader' => $teacher->id,
+            'grade' => 70.0,
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+            'attemptnumber' => 0,
+        ]);
+
+        // A rich UG submission comment, but authored about $ungraded — who has NO
+        // graded row. Under the old by-cmid/by-author gather this would inflate
+        // depth; after the fix it is excluded because it backs no graded item.
+        $DB->insert_record('local_unifiedgrader_scomm', (object)[
+            'cmid' => $assign->cmid,
+            'userid' => $ungraded->id,
+            'authorid' => $teacher->id,
+            'content' => 'This is a long, detailed and dialogic comment. Have you considered '
+                . 'revising the structure and expanding the analysis to strengthen your argument?',
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+        ]);
+
+        $rows = report::get_assignment_feedback_breakdown($course->id, $teacher->id);
+
+        $this->assertCount(1, $rows);
+        $row = $rows[0];
+        $this->assertSame((int)$assign->cmid, $row['cmid']);
+
+        // One graded, none with feedback -> coverage 0; and because the only UG
+        // comment does not back a graded row, depth/quality stay 0 too.
+        $this->assertSame(1, $row['ngraded']);
+        $this->assertSame(0, $row['nwithfeedback']);
+        $this->assertSame(0, $row['coverage']);
+        $this->assertSame(0, $row['depth']);
+        $this->assertSame(0, $row['quality']);
+
+        // Sanity: a UG comment that DOES back the graded row is still analysed.
+        $DB->insert_record('local_unifiedgrader_scomm', (object)[
+            'cmid' => $assign->cmid,
+            'userid' => $graded->id,
+            'authorid' => $teacher->id,
+            'content' => 'This is a long, detailed and dialogic comment. Have you considered '
+                . 'revising the structure and expanding the analysis to strengthen your argument?',
+            'timecreated' => 1700000000,
+            'timemodified' => 1700000000,
+        ]);
+        $rows2 = report::get_assignment_feedback_breakdown($course->id, $teacher->id);
+        $this->assertGreaterThan(0, $rows2[0]['depth']);
+    }
 }
