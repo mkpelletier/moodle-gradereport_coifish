@@ -26,8 +26,6 @@ namespace gradereport_coifish;
 
 use gradereport_coifish\task\calculate_feedback_metrics;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Scores a bucket of feedback artifacts (depth / quality / personalisation).
  *

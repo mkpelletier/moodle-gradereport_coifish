@@ -639,8 +639,8 @@ final class report_test extends \advanced_testcase {
         $this->assertSame($expected, $row['composite']);
 
         // Every advertised key is present with the right type.
-        foreach (['cmid', 'name', 'coverage', 'depth', 'quality', 'personalisation',
-                  'composite', 'ngraded', 'nwithfeedback'] as $key) {
+        $keys = ['cmid', 'name', 'coverage', 'depth', 'quality', 'personalisation', 'composite', 'ngraded', 'nwithfeedback'];
+        foreach ($keys as $key) {
             $this->assertArrayHasKey($key, $row);
         }
     }
