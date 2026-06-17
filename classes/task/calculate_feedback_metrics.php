@@ -144,7 +144,7 @@ class calculate_feedback_metrics extends scheduled_task {
      * "not feedback-relevant" (complete/incomplete self-study activities that
      * never receive written feedback).
      *
-     * The shared config key {@see local_coifish/feedback_excluded_cmids} holds a
+     * The shared config key `local_coifish/feedback_excluded_cmids` holds a
      * comma-separated list of `course_modules.id`. We read it dependency-free
      * (the key is absent/empty when local_coifish is not installed, in which case
      * nothing is excluded) and map the cmids to assign instance ids once, so
