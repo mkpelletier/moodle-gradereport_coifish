@@ -315,7 +315,7 @@ class report extends \grade_report {
         // One query maps every graded assign instance to its cmid and name.
         [$insql, $inparams] = $DB->get_in_or_equal(array_keys($coverage), SQL_PARAMS_NAMED, 'afb');
         $cmrows = $DB->get_records_sql(
-            "SELECT a.id AS assignid, cm.id AS cmid, a.name
+            "SELECT a.id AS assignid, cm.id AS cmid, a.name, a.grade AS gradetype
                FROM {assign} a
                JOIN {course_modules} cm ON cm.instance = a.id
                JOIN {modules} m ON m.id = cm.module AND m.name = 'assign'
@@ -352,6 +352,9 @@ class report extends \grade_report {
                 'composite' => $composite,
                 'ngraded' => $total,
                 'nwithfeedback' => $withfb,
+                // Scale-graded (complete/incomplete) assignments are not feedback-
+                // relevant by default; the consumer badges and overrides on this.
+                'scalegraded' => ((float)$cm->gradetype < 0),
             ];
         }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.9.0] - 2026-06-18
+
+### Changed
+- **Cohort feedback coverage now applies the grade-type heuristic, not just the manual exclusion list.** Scale-graded (complete/incomplete) assignments are dropped from a lecturer's coverage denominator and text analysis by default, since these are typically self-study activities that never receive written feedback. The cohort task reads both shared `local_coifish` config keys — `feedback_excluded_cmids` (forced out) and `feedback_included_cmids` (forced back in) — and applies a single combined clause per query: `AND a.id NOT IN (excluded) AND (a.grade >= 0 OR a.id IN (included))`, so point-graded and coordinator-included assignments count while scale-graded ones are excluded unless overridden. The cmid→assign-instance mappings are now memoised on the task (computed once per run, not per course). When both lists are empty the clause collapses to `AND a.grade >= 0`.
+- **The per-assignment breakdown now reports `scalegraded`.** `get_assignment_feedback_breakdown` selects the assign grade type and flags each row as scale-graded, so the sibling `local_coifish` drill-down can badge auto-excluded assignments and offer per-assignment include/exclude overrides without a second query.
+
 ## [2.8.1] - 2026-06-17
 
 ### Changed

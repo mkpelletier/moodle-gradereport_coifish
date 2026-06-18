@@ -33,6 +33,12 @@ use core\task\scheduled_task;
  * Calculate feedback quality metrics and cache them in the database.
  */
 class calculate_feedback_metrics extends scheduled_task {
+    /** @var int[]|null Memoised assign instance ids the coordinator forced out of the analytics. */
+    private $excludedassignids = null;
+
+    /** @var int[]|null Memoised assign instance ids the coordinator forced back into the analytics. */
+    private $includedassignids = null;
+
     /**
      * Return the task name.
      *
@@ -140,22 +146,45 @@ class calculate_feedback_metrics extends scheduled_task {
     }
 
     /**
-     * Assign instance ids that the sibling local_coifish plugin marks as
-     * "not feedback-relevant" (complete/incomplete self-study activities that
-     * never receive written feedback).
+     * Assign instance ids the coordinator forced OUT of the feedback analytics.
      *
-     * The shared config key `local_coifish/feedback_excluded_cmids` holds a
-     * comma-separated list of `course_modules.id`. We read it dependency-free
-     * (the key is absent/empty when local_coifish is not installed, in which case
-     * nothing is excluded) and map the cmids to assign instance ids once, so
-     * callers can drop them from the coverage denominator and the text analysis.
+     * Reads the shared config key `local_coifish/feedback_excluded_cmids` (a
+     * comma-separated list of `course_modules.id`) dependency-free and maps it to
+     * assign instance ids. Memoised: the mapping is global, so it is computed once
+     * per task run rather than per course. Empty when local_coifish is absent.
      *
      * @return array List of assign instance ids (may be empty).
      */
     protected function get_feedback_excluded_assignids(): array {
+        if ($this->excludedassignids === null) {
+            $this->excludedassignids = $this->map_config_cmids_to_assignids('feedback_excluded_cmids');
+        }
+        return $this->excludedassignids;
+    }
+
+    /**
+     * Assign instance ids the coordinator forced back INTO the feedback analytics,
+     * overriding the grade-type heuristic. Memoised per task run.
+     *
+     * @return array List of assign instance ids (may be empty).
+     */
+    protected function get_feedback_included_assignids(): array {
+        if ($this->includedassignids === null) {
+            $this->includedassignids = $this->map_config_cmids_to_assignids('feedback_included_cmids');
+        }
+        return $this->includedassignids;
+    }
+
+    /**
+     * Map a comma-separated cmid config value to distinct assign instance ids.
+     *
+     * @param string $configkey The local_coifish config key holding the cmid list.
+     * @return array List of assign instance ids (may be empty).
+     */
+    private function map_config_cmids_to_assignids(string $configkey): array {
         global $DB;
 
-        $raw = get_config('local_coifish', 'feedback_excluded_cmids');
+        $raw = get_config('local_coifish', $configkey);
         if ($raw === false || trim((string)$raw) === '') {
             return [];
         }
@@ -171,7 +200,7 @@ class calculate_feedback_metrics extends scheduled_task {
             return [];
         }
 
-        [$insql, $inparams] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, 'exc');
+        [$insql, $inparams] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, 'fbcm');
         $instances = $DB->get_fieldset_sql(
             "SELECT cm.instance
                FROM {course_modules} cm
@@ -180,6 +209,44 @@ class calculate_feedback_metrics extends scheduled_task {
             $inparams
         );
         return array_values(array_unique(array_map('intval', $instances)));
+    }
+
+    /**
+     * Build the SQL fragment that keeps only feedback-relevant assignments.
+     *
+     * Applies the grade-type heuristic — scale-graded (complete/incomplete)
+     * assignments are dropped unless the coordinator forced them back in — and
+     * also drops any the coordinator forced out. Assumes the assign table is
+     * aliased `a` in the calling query.
+     *
+     * @param string $prefix A unique placeholder prefix for this query.
+     * @return array [string $sqlfragment, array $params].
+     */
+    private function get_feedback_relevance_clause(string $prefix): array {
+        global $DB;
+
+        $sql = '';
+        $params = [];
+
+        $excluded = $this->get_feedback_excluded_assignids();
+        if (!empty($excluded)) {
+            [$notin, $p] = $DB->get_in_or_equal($excluded, SQL_PARAMS_NAMED, $prefix . 'ex', false);
+            $sql .= " AND a.id $notin";
+            $params += $p;
+        }
+
+        // Heuristic: keep point/no-grade assignments (a.grade >= 0); drop scale-
+        // graded ones (a.grade < 0) unless explicitly forced back in.
+        $included = $this->get_feedback_included_assignids();
+        if (!empty($included)) {
+            [$in, $p] = $DB->get_in_or_equal($included, SQL_PARAMS_NAMED, $prefix . 'in', true);
+            $sql .= " AND (a.grade >= 0 OR a.id $in)";
+            $params += $p;
+        } else {
+            $sql .= ' AND a.grade >= 0';
+        }
+
+        return [$sql, $params];
     }
 
     /**
@@ -236,15 +303,11 @@ class calculate_feedback_metrics extends scheduled_task {
                ) mf ON mf.itemid = ag.id";
         $mediaparams = ['mfa' => 'audio/%', 'mfv' => 'video/%'];
 
-        // Exclude assignments the coordinator marked as not feedback-relevant, so
-        // they contribute to neither the denominator nor the with-feedback count.
-        $exclsql = '';
-        $exclparams = [];
-        $excludedassignids = $this->get_feedback_excluded_assignids();
-        if (!empty($excludedassignids)) {
-            [$notin, $exclparams] = $DB->get_in_or_equal($excludedassignids, SQL_PARAMS_NAMED, 'covexcl', false);
-            $exclsql = " AND a.id $notin";
-        }
+        // Keep only feedback-relevant assignments: drop scale-graded
+        // (complete/incomplete) self-study activities by default, plus anything
+        // the coordinator forced out, so neither the denominator nor the
+        // with-feedback count is skewed by work that never expects feedback.
+        [$exclsql, $exclparams] = $this->get_feedback_relevance_clause('cov');
 
         $records = $DB->get_records_sql(
             "SELECT ag.grader AS userid,
@@ -454,15 +517,10 @@ class calculate_feedback_metrics extends scheduled_task {
 
         [$insql, $inparams] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'td');
 
-        // Drop assignments the coordinator marked as not feedback-relevant so
-        // their text never reaches the depth/quality/personalisation analysis.
-        $exclsql = '';
-        $exclparams = [];
-        $excludedassignids = $this->get_feedback_excluded_assignids();
-        if (!empty($excludedassignids)) {
-            [$notin, $exclparams] = $DB->get_in_or_equal($excludedassignids, SQL_PARAMS_NAMED, 'txtexcl', false);
-            $exclsql = " AND a.id $notin";
-        }
+        // Keep only feedback-relevant assignments (heuristic + coordinator
+        // overrides) so scale-graded self-study work never reaches the
+        // depth/quality/personalisation analysis.
+        [$exclsql, $exclparams] = $this->get_feedback_relevance_clause('txt');
 
         $records = $DB->get_records_sql(
             "SELECT fc.id, ag.grader AS userid, ag.assignment AS bucketid, fc.commenttext

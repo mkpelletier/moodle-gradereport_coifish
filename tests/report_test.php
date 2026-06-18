@@ -711,17 +711,28 @@ final class report_test extends \advanced_testcase {
             'attemptnumber' => 0,
         ]);
 
-        $task = new \gradereport_coifish\task\calculate_feedback_metrics();
+        // Both assignments are point-graded, so the heuristic keeps them; the
+        // exclusion list is the only thing in play. A fresh task is used for each
+        // phase because the cmid→assignid mapping is memoised per task run (config
+        // never changes mid-run in production).
 
         // Baseline: both graded items count, so the denominator is 2.
         set_config('feedback_excluded_cmids', '', 'local_coifish');
-        $before = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+        $before = $this->call_task_protected(
+            new \gradereport_coifish\task\calculate_feedback_metrics(),
+            'get_feedback_coverage',
+            [$course->id, [$teacher->id]]
+        );
         $this->assertSame(2, (int)$before[$teacher->id]['total']);
         $this->assertSame(1, (int)$before[$teacher->id]['withfeedback']);
 
         // Exclude the self-study assignment's cmid.
         set_config('feedback_excluded_cmids', (string)$assign2->cmid, 'local_coifish');
-        $after = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+        $after = $this->call_task_protected(
+            new \gradereport_coifish\task\calculate_feedback_metrics(),
+            'get_feedback_coverage',
+            [$course->id, [$teacher->id]]
+        );
 
         // The denominator shrank to the single feedback-relevant graded item, and
         // since it carries feedback the coverage percentage rose to 100%.
@@ -731,8 +742,69 @@ final class report_test extends \advanced_testcase {
 
         // A non-numeric / unknown token must be ignored, leaving the list empty.
         set_config('feedback_excluded_cmids', 'not-a-cmid', 'local_coifish');
-        $ignored = $this->call_task_protected($task, 'get_feedback_coverage', [$course->id, [$teacher->id]]);
+        $ignored = $this->call_task_protected(
+            new \gradereport_coifish\task\calculate_feedback_metrics(),
+            'get_feedback_coverage',
+            [$course->id, [$teacher->id]]
+        );
         $this->assertSame(2, (int)$ignored[$teacher->id]['total']);
+    }
+
+    /**
+     * The grade-type heuristic must drop scale-graded (complete/incomplete)
+     * assignments from the cohort coverage denominator by default, and the
+     * shared feedback_included_cmids override must force one back in.
+     */
+    public function test_feedback_coverage_heuristic_excludes_scale_graded(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $student = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $generator->enrol_user($student->id, $course->id, 'student');
+
+        // One point-graded essay and one complete/incomplete (scale) self-study.
+        $scale = $generator->create_scale(['scale' => 'Incomplete,Complete']);
+        $essay = $generator->create_module('assign', ['course' => $course->id, 'name' => 'Essay']);
+        $selfstudy = $generator->create_module(
+            'assign',
+            ['course' => $course->id, 'name' => 'Self-study', 'grade' => -$scale->id]
+        );
+
+        foreach ([$essay->id => 80.0, $selfstudy->id => 2.0] as $assignid => $grade) {
+            $DB->insert_record('assign_grades', (object)[
+                'assignment' => $assignid,
+                'userid' => $student->id,
+                'grader' => $teacher->id,
+                'grade' => $grade,
+                'timecreated' => 1700000000,
+                'timemodified' => 1700000000,
+                'attemptnumber' => 0,
+            ]);
+        }
+
+        set_config('feedback_excluded_cmids', '', 'local_coifish');
+        set_config('feedback_included_cmids', '', 'local_coifish');
+
+        // Heuristic alone: the scale-graded self-study drops out, leaving the essay.
+        $heuristic = $this->call_task_protected(
+            new \gradereport_coifish\task\calculate_feedback_metrics(),
+            'get_feedback_coverage',
+            [$course->id, [$teacher->id]]
+        );
+        $this->assertSame(1, (int)$heuristic[$teacher->id]['total']);
+
+        // Coordinator forces the self-study back in: the denominator returns to 2.
+        set_config('feedback_included_cmids', (string)$selfstudy->cmid, 'local_coifish');
+        $forcedin = $this->call_task_protected(
+            new \gradereport_coifish\task\calculate_feedback_metrics(),
+            'get_feedback_coverage',
+            [$course->id, [$teacher->id]]
+        );
+        $this->assertSame(2, (int)$forcedin[$teacher->id]['total']);
     }
 
     /**
