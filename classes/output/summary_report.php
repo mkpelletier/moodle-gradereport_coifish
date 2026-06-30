@@ -75,17 +75,15 @@ class summary_report implements renderable, templatable {
             \gradereport_coifish\intervention_templates::get_all_for_client()
         );
 
-        // Gate the insights tab: course override takes precedence over site setting.
+        // Course-level overrides live in the course_<id> JSON blob; the
+        // show_longitudinal gate below still reads from it directly.
         $configkey = 'course_' . $this->report->courseid;
         $raw = get_config('gradereport_coifish', $configkey);
         $coursesettings = $raw ? json_decode($raw, true) : [];
-        $courseoverride = $coursesettings['show_insights'] ?? '';
-        if ($courseoverride !== '') {
-            $data->showinsights = ($courseoverride === '1');
-        } else {
-            $showinsights = get_config('gradereport_coifish', 'show_insights');
-            $data->showinsights = ($showinsights === false || $showinsights !== '0');
-        }
+
+        // Gate the insights tab via the shared resolver (course override → site
+        // default) so this matches the student view and the course nav node.
+        $data->showinsights = gradereport_coifish_insights_enabled($this->report->courseid);
 
         if ($data->showinsights) {
             // Cohort-level insights for the teacher.

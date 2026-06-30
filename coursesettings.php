@@ -66,6 +66,14 @@ if (data_submitted() && confirm_sesskey()) {
     $newsettings['show_longitudinal'] = optional_param('show_longitudinal', '', PARAM_ALPHANUMEXT);
     $newsettings['gamification_enabled'] = (bool)optional_param('gamification_enabled', 0, PARAM_BOOL);
 
+    // Student pulse dashboard (per-course trial toggle + frequency).
+    // Tri-state ('' = use site default, '1' = on, '0' = off); blank interval
+    // (0) likewise means "use the site default frequency".
+    $newsettings['student_dashboard_enabled'] =
+        optional_param('student_dashboard_enabled', '', PARAM_ALPHANUMEXT);
+    $interval = optional_param('student_dashboard_interval_days', 0, PARAM_INT);
+    $newsettings['student_dashboard_interval_days'] = ($interval > 0) ? min(120, max(1, $interval)) : '';
+
     // Widget overrides — only for site-enabled widgets.
     $newsettings['widgets'] = [];
     foreach (array_keys($sitewidgets) as $key) {

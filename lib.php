@@ -100,3 +100,71 @@ function grade_report_coifish_profilereport(object $course, object $user, bool $
         $studentreport->export_for_template($OUTPUT)
     );
 }
+
+/**
+ * Whether the cohort "Insights" surface is enabled for a course.
+ *
+ * Single source of truth for the tri-state rule shared by every surface that
+ * shows insights: a per-course override (the course_<id> JSON blob, key
+ * 'show_insights' = '1' | '0' | '') takes precedence; when unset ('') it falls
+ * back to the site default, preserving that default's "unset means on"
+ * convention. Centralising it here keeps the summary view, the student view and
+ * the course-navigation node from drifting apart — the same motivation behind
+ * gradereport_coifish_viewer_can_see_user() above.
+ *
+ * @param int $courseid The course ID.
+ * @return bool True if the insights surface should be shown.
+ */
+function gradereport_coifish_insights_enabled(int $courseid): bool {
+    $raw = get_config('gradereport_coifish', 'course_' . $courseid);
+    $coursesettings = $raw ? (json_decode($raw, true) ?: []) : [];
+    $courseoverride = $coursesettings['show_insights'] ?? '';
+    if ($courseoverride !== '') {
+        return ($courseoverride === '1');
+    }
+    $siteinsights = get_config('gradereport_coifish', 'show_insights');
+    return ($siteinsights === false || $siteinsights !== '0');
+}
+
+/**
+ * Add a "CoIFish Insights" node to the course navigation ("More" menu).
+ *
+ * Surfaces the teacher cohort-insights view — otherwise reachable only by
+ * opening the CoIFish grade report and switching to the Insights tab — as a
+ * one-click course-level entry point. Shown only to graders
+ * (moodle/grade:viewall) when the insights surface is enabled for the course,
+ * so the node never advertises a destination the viewer cannot use. Hosted in
+ * the report plugin itself (not local_coifish) so the report owns its own
+ * navigation and the node does not depend on an optional sibling plugin being
+ * installed. The callback does nothing but two cheap checks — it never
+ * instantiates the report — because it runs on every course page load.
+ *
+ * @param navigation_node $navigation The course navigation node.
+ * @param stdClass $course The course.
+ * @param context_course $context The course context.
+ */
+function gradereport_coifish_extend_navigation_course(
+    navigation_node $navigation,
+    stdClass $course,
+    context_course $context
+): void {
+    if (!has_capability('moodle/grade:viewall', $context)) {
+        return;
+    }
+    if (!gradereport_coifish_insights_enabled((int)$course->id)) {
+        return;
+    }
+
+    $url = new moodle_url('/grade/report/coifish/index.php', [
+        'id' => $course->id,
+        'view' => 'insights',
+    ]);
+    $navigation->add(
+        get_string('insights_nav', 'gradereport_coifish'),
+        $url,
+        navigation_node::TYPE_SETTING,
+        null,
+        'gradereport_coifish_insights',
+        new pix_icon('i/report', '')
+    );
+}

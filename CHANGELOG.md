@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.11.0] - 2026-06-29
+
+### Added
+- **Student pulse dashboard (site default + per-course override).** A self-referenced, gamified progress modal shown to students on course entry, once per period. Site-wide defaults (enabled, frequency) are set in the report's admin settings and can be overridden per course (use site default / on / off, and a per-course frequency). The modal presents each measure as a friendly level — marks show the real percentage; the others use a five-step scale (Just getting going → Excellent) — with period-over-period direction, an improving-streak and personal-best badge, and a course-aware "things to try next" that falls back to upcoming assignment/quiz deadlines (within a frequency-scaled horizon) when no metric action applies. A help control in the modal explains what it is and how often it appears. Strictly self-referenced — no peer comparison; off by default. A daily scheduled task (`build_student_pulse`) captures one snapshot per student per period into a new `gradereport_coifish_student_pulse` table, sourcing metrics from the `local_coifish` analytics snapshot, so the modal renders only precomputed data (no analytics run on the page load). The modal is injected via the `before_footer_html_generation` hook on the course page and shown by an AMD module. Students can dismiss a modal (it returns next period) or permanently mute it per course (via a new `mute_pulse` web service); both preferences and the snapshot table are declared in the privacy provider for export and deletion. Accessibility: shape-plus-text trend cues (not colour alone), labelled dialog, and screen-reader text on deltas.
+
+## [2.10.0] - 2026-06-29
+
+### Added
+- **"CoIFish Insights" node in the course "More" menu.** A `gradereport_coifish_extend_navigation_course()` hook adds a one-click link straight to the teacher cohort-insights view (`?view=insights`), so faculty no longer have to open the gradebook report and switch tabs to reach the analytics. The node is shown only to graders (`moodle/grade:viewall`) when the insights surface is enabled for the course, and is hosted in the report plugin itself so it never depends on the optional `local_coifish` sibling. The tri-state insights gate (course override → site default) is now resolved by a single shared `gradereport_coifish_insights_enabled()` helper that the summary view, student view and the new nav node all call, replacing two duplicated copies of the rule.
+- **Course Access prescriptive cohort card.** A new behavioural-engagement diagnostic flags students with no recent course access (from `{user_lastaccess}`), with students who have never accessed only flagged once the course has been running longer than the inactivity window. It carries a diagnostic, a recommended check-in intervention (mapped to the `stale` intervention-template family), and a full methodology/rationale detail modal. Course access is deliberately surfaced **separately from** the Community of Inquiry presences: logging in is behavioural engagement, not social/cognitive/teaching presence, so it informs early-warning outreach without distorting the CoI scores.
+
+### Changed
+- **Social-presence composite weights are now admin-configurable.** The forum / BigBlueButton / collaborative / peer-messaging sub-weights are exposed as sliders (`gradereport_coifish/sp_weight_*`), mirroring the existing feedback-quality weights, so the forum signal can be de-emphasised per institution. Weights are resolved once per cohort via `report::get_social_weights()` and normalised at calculation time; when BigBlueButton is not in use its weight is redistributed proportionally across the remaining signals. Defaults reproduce the previous 50/20/15/15 behaviour for BBB courses.
+- **Social-presence metric is now versioned.** `report::SOCIAL_METRIC_VERSION` plus `report::get_social_weights_signature()` give longitudinal consumers a stable signature to record, so a later weight change does not silently make historical social-presence scores non-comparable.
+
 ## [2.9.0] - 2026-06-18
 
 ### Changed

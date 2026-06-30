@@ -134,6 +134,28 @@ class coursesettings implements renderable, templatable {
         // Gamification toggle.
         $data->gamificationenabled = (bool)$gamificationenabled;
 
+        // Student pulse dashboard (per-course trial toggle + frequency).
+        $enabledval = $this->coursesettings['student_dashboard_enabled'] ?? '';
+        if ($enabledval === true) {
+            $enabledval = '1';
+        } else if ($enabledval === false) {
+            $enabledval = '0';
+        }
+        $data->dashboardoptions = [
+            ['value' => '', 'label' => get_string('defaultview_usesite', 'gradereport_coifish'),
+                'selected' => ($enabledval === '')],
+            ['value' => '1', 'label' => get_string('setting_enabled', 'gradereport_coifish'),
+                'selected' => ($enabledval === '1')],
+            ['value' => '0', 'label' => get_string('setting_disabled', 'gradereport_coifish'),
+                'selected' => ($enabledval === '0')],
+        ];
+        $di = $this->coursesettings['student_dashboard_interval_days'] ?? '';
+        $data->studentdashboardinterval = (is_numeric($di) && (int)$di > 0) ? (int)$di : '';
+        $siteinterval = (int)get_config('gradereport_coifish', 'student_dashboard_interval');
+        $data->sitedashboardinterval = $siteinterval > 0
+            ? $siteinterval
+            : \gradereport_coifish\pulse::DEFAULT_INTERVAL_DAYS;
+
         // Widget overrides.
         $data->haswidgets = !empty($this->sitewidgets);
         $data->widgets = [];

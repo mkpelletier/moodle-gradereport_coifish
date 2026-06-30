@@ -1831,3 +1831,285 @@
        to win over .text-muted in the same FA icon — stylelint rejects !important. */
     color: #495057;
 }
+
+/* ── Student pulse modal (dashboard layout) ── */
+.gradereport-coifish-pulse {
+    --coifish-pulse-accent: #0d553f;
+    --coifish-pulse-track: #e9ecef;
+    --coifish-pulse-up: #198754;
+    --coifish-pulse-down: #b54708;
+    --coifish-pulse-same: #6c757d;
+}
+.gradereport-coifish-pulse-sub {
+    margin-top: 0.1rem;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+.gradereport-coifish-pulse-help-btn {
+    margin-left: calc(0.4rem + 5px);
+    color: #888;
+    font-size: 0.8rem;
+    line-height: 1;
+    text-decoration: none;
+}
+.gradereport-coifish-pulse-help-btn:hover,
+.gradereport-coifish-pulse-help-btn:focus {
+    color: var(--coifish-pulse-accent);
+}
+.gradereport-coifish-pulse-help-inner {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: rgba(13, 85, 63, 0.05);
+    font-size: 0.88rem;
+    color: #495057;
+}
+.gradereport-coifish-pulse-help-inner strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #0d553f;
+}
+.gradereport-coifish-pulse-hero-ring {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    margin: 0.25rem auto 0;
+    border-radius: 50%;
+    box-shadow: 0 6px 18px rgba(13, 85, 63, 0.18);
+}
+.gradereport-coifish-pulse-hero-inner {
+    position: absolute;
+    inset: 15px;
+    border-radius: 50%;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.gradereport-coifish-pulse-hero-icon {
+    font-size: 3.2rem;
+    color: var(--coifish-pulse-accent);
+}
+.gradereport-coifish-pulse-hero-band {
+    margin-top: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #212529;
+    line-height: 1.2;
+}
+.gradereport-coifish-pulse-hero-caption {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6c757d;
+}
+.gradereport-coifish-pulse-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--coifish-pulse-same);
+}
+.gradereport-coifish-pulse-trend-up {
+    color: var(--coifish-pulse-up);
+}
+.gradereport-coifish-pulse-trend-down {
+    color: var(--coifish-pulse-down);
+}
+.gradereport-coifish-pulse-trend-same,
+.gradereport-coifish-pulse-trend-first {
+    color: var(--coifish-pulse-same);
+}
+.gradereport-coifish-pulse-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.25rem;
+    margin-top: 1.1rem;
+}
+.gradereport-coifish-pulse-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    width: 96px;
+}
+.gradereport-coifish-pulse-badge-medal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    font-size: 1.7rem;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18), inset 0 0 0 3px rgba(255, 255, 255, 0.5);
+    transition: transform 200ms ease;
+}
+.gradereport-coifish-pulse-badge:hover .gradereport-coifish-pulse-badge-medal {
+    transform: scale(1.08);
+}
+.gradereport-coifish-pulse-badge-streak {
+    background: linear-gradient(135deg, #fd9843 0%, #e8590c 100%);
+}
+.gradereport-coifish-pulse-badge-best {
+    background: linear-gradient(135deg, #ffd24a 0%, #f08c00 100%);
+}
+.gradereport-coifish-pulse-badge-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #212529;
+    text-align: center;
+}
+.gradereport-coifish-pulse-badge-sub {
+    font-size: 0.72rem;
+    line-height: 1.1;
+    color: #6c757d;
+    text-align: center;
+}
+.gradereport-coifish-pulse-card {
+    height: 100%;
+    border: 1px solid #e6e8eb;
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    transition: box-shadow 150ms ease, border-color 150ms ease;
+}
+.gradereport-coifish-pulse-card:hover {
+    border-color: #cfd4da;
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+.gradereport-coifish-pulse-card-face {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    width: 100%;
+    padding: 0.7rem 0.5rem;
+    background: transparent;
+    border: 0;
+    text-align: center;
+    cursor: pointer;
+}
+.gradereport-coifish-pulse-card-face:focus-visible {
+    outline: 3px solid rgba(13, 85, 63, 0.4);
+    outline-offset: -3px;
+}
+.gradereport-coifish-pulse-card-label {
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #212529;
+    line-height: 1.2;
+}
+.gradereport-coifish-pulse-card-level {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--coifish-pulse-accent);
+    line-height: 1.2;
+}
+.gradereport-coifish-pulse-ring {
+    position: relative;
+    flex: 0 0 auto;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+}
+.gradereport-coifish-pulse-ring-inner {
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--coifish-pulse-accent);
+    font-size: 1rem;
+}
+.gradereport-coifish-pulse-chevron {
+    margin-top: 0.15rem;
+    font-size: 0.7rem;
+    color: #adb5bd;
+    transition: transform 200ms ease;
+}
+.gradereport-coifish-pulse-card-face[aria-expanded="true"] .gradereport-coifish-pulse-chevron {
+    transform: rotate(180deg);
+}
+.gradereport-coifish-pulse-drill-inner {
+    padding: 0 0.7rem 0.7rem;
+    border-top: 1px solid #f0f1f3;
+    text-align: left;
+}
+.gradereport-coifish-pulse-drill-heading {
+    margin: 0.6rem 0 0.2rem;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    color: #6c757d;
+}
+.gradereport-coifish-pulse-drill-text {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #495057;
+}
+.gradereport-coifish-pulse-suggestions {
+    border-left: 3px solid var(--coifish-pulse-accent);
+    border-radius: 8px;
+    background: rgba(13, 85, 63, 0.04);
+    padding: 0.7rem 0.9rem;
+}
+.gradereport-coifish-pulse-suggestions-title {
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0d553f;
+}
+.gradereport-coifish-pulse-suggestions ul {
+    margin-bottom: 0;
+    padding-left: 1.1rem;
+    font-size: 0.88rem;
+}
+.gradereport-coifish-pulse-suggestions li + li {
+    margin-top: 0.2rem;
+}
+.gradereport-coifish-pulse-duedates-nudge {
+    margin-top: 0.4rem;
+    font-size: 0.82rem;
+    color: #6c757d;
+}
+.gradereport-coifish-pulse-access {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    background: #f1f3f5;
+    color: #495057;
+}
+.gradereport-coifish-pulse-access-ok {
+    background: rgba(25, 135, 84, 0.1);
+    color: #146c43;
+}
+
+@media (min-width: 768px) {
+    .gradereport-coifish-pulse-summary {
+        border-right: 1px solid #eef0f2;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gradereport-coifish-pulse-chevron,
+    .gradereport-coifish-pulse-card,
+    .gradereport-coifish-pulse-badge-medal {
+        transition: none;
+    }
+
+    .gradereport-coifish-pulse .collapsing {
+        transition: none;
+    }
+}

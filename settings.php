@@ -442,6 +442,31 @@ if ($ADMIN->fulltree) {
         ]
     ));
 
+    // Student pulse dashboard — site defaults (each course can override these).
+    $settings->add(new admin_setting_heading(
+        'gradereport_coifish/student_dashboard_heading',
+        get_string('setting_student_dashboard_heading', 'gradereport_coifish'),
+        get_string('setting_student_dashboard_heading_desc', 'gradereport_coifish')
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/student_dashboard_enabled',
+        get_string('setting_student_dashboard_enabled', 'gradereport_coifish'),
+        get_string('setting_student_dashboard_enabled_desc', 'gradereport_coifish'),
+        0
+    ));
+
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/student_dashboard_interval',
+        get_string('setting_student_dashboard_interval', 'gradereport_coifish'),
+        get_string('setting_student_dashboard_interval_desc', 'gradereport_coifish'),
+        14,
+        1,
+        120,
+        1,
+        ' days'
+    ));
+
     // Feedback-quality composite weights. Each slider sets the relative weight
     // of a sub-score; they are normalised at calculation time, so they need not
     // sum to 100.
@@ -456,6 +481,30 @@ if ($ADMIN->fulltree) {
             'gradereport_coifish/feedback_weight_' . $dim,
             get_string('setting_feedback_weight_' . $dim, 'gradereport_coifish'),
             get_string('setting_feedback_weight_' . $dim . '_desc', 'gradereport_coifish'),
+            $default,
+            0,
+            100,
+            5,
+            '%'
+        ));
+    }
+
+    // Social-presence composite weights. Like the feedback weights, each slider
+    // sets a signal's relative weight; they are normalised at calculation time,
+    // so they need not sum to 100. Course access / login is intentionally absent
+    // — it is behavioural engagement, not social presence, and is surfaced as a
+    // separate Course Access card.
+    $settings->add(new admin_setting_heading(
+        'gradereport_coifish/social_weights_heading',
+        get_string('setting_social_weights_heading', 'gradereport_coifish'),
+        get_string('setting_social_weights_heading_desc', 'gradereport_coifish')
+    ));
+
+    foreach (\gradereport_coifish\report::SOCIAL_WEIGHT_DEFAULTS as $sig => $default) {
+        $settings->add(new gradereport_coifish_admin_setting_configslider(
+            'gradereport_coifish/sp_weight_' . $sig,
+            get_string('setting_sp_weight_' . $sig, 'gradereport_coifish'),
+            get_string('setting_sp_weight_' . $sig . '_desc', 'gradereport_coifish'),
             $default,
             0,
             100,

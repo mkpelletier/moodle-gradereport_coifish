@@ -37,6 +37,7 @@ use core_privacy\local\request\writer;
 class provider implements
     \core_privacy\local\metadata\provider,
     \core_privacy\local\request\core_userlist_provider,
+    \core_privacy\local\request\user_preference_provider,
     \core_privacy\local\request\plugin\provider {
     /**
      * Describe the personal data stored by this plugin.
@@ -90,6 +91,28 @@ class provider implements
             'timemodified' => 'privacy:metadata:feedback:timemodified',
         ], 'privacy:metadata:feedback');
 
+        $collection->add_database_table('gradereport_coifish_student_pulse', [
+            'userid' => 'privacy:metadata:pulse:userid',
+            'courseid' => 'privacy:metadata:pulse:courseid',
+            'periodstart' => 'privacy:metadata:pulse:periodstart',
+            'grade' => 'privacy:metadata:pulse:grade',
+            'engagement' => 'privacy:metadata:pulse:engagement',
+            'social' => 'privacy:metadata:pulse:social',
+            'selfregulation' => 'privacy:metadata:pulse:selfregulation',
+            'feedbackpct' => 'privacy:metadata:pulse:feedbackpct',
+            'daysoffline' => 'privacy:metadata:pulse:daysoffline',
+            'timecomputed' => 'privacy:metadata:pulse:timecomputed',
+        ], 'privacy:metadata:pulse');
+
+        $collection->add_user_preference(
+            'gradereport_coifish_pulse_lastshown',
+            'privacy:metadata:preference:pulse_lastshown'
+        );
+        $collection->add_user_preference(
+            'gradereport_coifish_pulse_muted',
+            'privacy:metadata:preference:pulse_muted'
+        );
+
         return $collection;
     }
 
@@ -130,6 +153,15 @@ class provider implements
             ['contextlevel' => CONTEXT_COURSE, 'userid' => $userid]
         );
 
+        // Student pulse snapshots.
+        $contextlist->add_from_sql(
+            "SELECT DISTINCT ctx.id
+               FROM {context} ctx
+               JOIN {gradereport_coifish_student_pulse} p ON p.courseid = ctx.instanceid
+              WHERE ctx.contextlevel = :contextlevel AND p.userid = :userid",
+            ['contextlevel' => CONTEXT_COURSE, 'userid' => $userid]
+        );
+
         return $contextlist;
     }
 
@@ -166,6 +198,13 @@ class provider implements
         $userlist->add_from_sql(
             'userid',
             "SELECT DISTINCT userid FROM {gradereport_coifish_feedback} WHERE courseid = :courseid",
+            ['courseid' => $courseid]
+        );
+
+        // Students with pulse snapshots.
+        $userlist->add_from_sql(
+            'userid',
+            "SELECT DISTINCT userid FROM {gradereport_coifish_student_pulse} WHERE courseid = :courseid",
             ['courseid' => $courseid]
         );
     }
@@ -265,6 +304,50 @@ class provider implements
                     (object)['feedback' => array_values($feedback)]
                 );
             }
+
+            // Export this student's pulse-dashboard snapshots.
+            $pulse = $DB->get_records('gradereport_coifish_student_pulse', [
+                'courseid' => $courseid,
+                'userid' => $userid,
+            ], 'periodstart');
+            if ($pulse) {
+                writer::with_context($context)->export_data(
+                    array_merge($subcontext, ['pulse_dashboard']),
+                    (object)['snapshots' => array_values($pulse)]
+                );
+            }
+        }
+    }
+
+    /**
+     * Export stored user preferences for a user.
+     *
+     * The pulse "last shown" and "muted" preferences are per-course, so their
+     * names carry the course ID as a suffix; scan and export each.
+     *
+     * @param int $userid The user to export preferences for.
+     */
+    public static function export_user_preferences(int $userid): void {
+        $prefs = get_user_preferences(null, null, $userid);
+        if (!is_array($prefs)) {
+            return;
+        }
+        foreach ($prefs as $name => $value) {
+            if (strpos($name, \gradereport_coifish\pulse::PREF_LASTSHOWN) === 0) {
+                writer::export_user_preference(
+                    'gradereport_coifish',
+                    $name,
+                    $value,
+                    get_string('privacy:metadata:preference:pulse_lastshown', 'gradereport_coifish')
+                );
+            } else if (strpos($name, \gradereport_coifish\pulse::PREF_MUTED) === 0) {
+                writer::export_user_preference(
+                    'gradereport_coifish',
+                    $name,
+                    $value,
+                    get_string('privacy:metadata:preference:pulse_muted', 'gradereport_coifish')
+                );
+            }
         }
     }
 
@@ -294,6 +377,7 @@ class provider implements
         }
         $DB->delete_records('gradereport_coifish_intv', ['courseid' => $courseid]);
         $DB->delete_records('gradereport_coifish_feedback', ['courseid' => $courseid]);
+        $DB->delete_records('gradereport_coifish_student_pulse', ['courseid' => $courseid]);
     }
 
     /**
@@ -348,6 +432,14 @@ class provider implements
                 'courseid' => $courseid,
                 'userid' => $userid,
             ]);
+
+            // Delete pulse snapshots and the per-course pulse preferences.
+            $DB->delete_records('gradereport_coifish_student_pulse', [
+                'courseid' => $courseid,
+                'userid' => $userid,
+            ]);
+            unset_user_preference(\gradereport_coifish\pulse::PREF_LASTSHOWN . $courseid, $userid);
+            unset_user_preference(\gradereport_coifish\pulse::PREF_MUTED . $courseid, $userid);
         }
     }
 
@@ -407,5 +499,16 @@ class provider implements
             "courseid = :courseid AND userid $usersql",
             array_merge(['courseid' => $courseid], $userparams)
         );
+
+        // Delete pulse snapshots and the per-course pulse preferences.
+        $DB->delete_records_select(
+            'gradereport_coifish_student_pulse',
+            "courseid = :courseid AND userid $usersql",
+            array_merge(['courseid' => $courseid], $userparams)
+        );
+        foreach ($userids as $uid) {
+            unset_user_preference(\gradereport_coifish\pulse::PREF_LASTSHOWN . $courseid, $uid);
+            unset_user_preference(\gradereport_coifish\pulse::PREF_MUTED . $courseid, $uid);
+        }
     }
 }

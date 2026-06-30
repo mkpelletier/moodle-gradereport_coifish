@@ -246,6 +246,84 @@ class report extends \grade_report {
     }
 
     /**
+     * Structural version of the social-presence composite. Bump this only when
+     * the *shape* of the metric changes (its signals or normalisation), not when
+     * an admin merely re-tunes the weights. Version 2 is the first configurable,
+     * proportionally-renormalised definition (version 1 was the hardcoded
+     * 50/20/15/15 with a fixed 65/20/15 no-BBB fallback).
+     *
+     * @var int
+     */
+    public const SOCIAL_METRIC_VERSION = 2;
+
+    /**
+     * Default sub-weights (as percentages) for the cohort social-presence
+     * composite. Admins override these via gradereport_coifish/sp_weight_*.
+     *
+     * These are interaction signals only — forum participation, BigBlueButton
+     * attendance, collaborative activities (glossary/wiki/database/workshop) and
+     * peer messaging. Course access / login is deliberately NOT among them: it
+     * is behavioural engagement, not Community-of-Inquiry social presence, and is
+     * surfaced separately (see the Course Access prescriptive card).
+     *
+     * @var array
+     */
+    public const SOCIAL_WEIGHT_DEFAULTS = [
+        'forum' => 50,
+        'bbb' => 20,
+        'collab' => 15,
+        'msg' => 15,
+    ];
+
+    /**
+     * Cohort social-presence sub-weights, normalised to fractions that sum to 1.
+     * Mirrors get_feedback_weights(): reads the admin-configurable percentages,
+     * falls back to the defaults, and never collapses to zero if an admin zeroes
+     * everything. When BigBlueButton is not in use the caller redistributes the
+     * 'bbb' fraction proportionally across the remaining signals.
+     *
+     * @return array Map of signal => fraction (forum, bbb, collab, msg).
+     */
+    public static function get_social_weights(): array {
+        $raw = [];
+        $sum = 0.0;
+        foreach (self::SOCIAL_WEIGHT_DEFAULTS as $key => $default) {
+            $val = get_config('gradereport_coifish', 'sp_weight_' . $key);
+            $val = ($val === false || $val === '') ? $default : (float)$val;
+            $val = max(0.0, $val);
+            $raw[$key] = $val;
+            $sum += $val;
+        }
+        if ($sum <= 0) {
+            $raw = self::SOCIAL_WEIGHT_DEFAULTS;
+            $sum = array_sum(self::SOCIAL_WEIGHT_DEFAULTS);
+        }
+        $out = [];
+        foreach ($raw as $key => $val) {
+            $out[$key] = $val / $sum;
+        }
+        return $out;
+    }
+
+    /**
+     * Short, stable signature of the current social-presence metric definition:
+     * the structural version plus the configured sub-weights. Longitudinal
+     * consumers (e.g. local_coifish snapshots) can record this so that a later
+     * weight change does not silently make historical social-presence scores
+     * non-comparable — a step-change in a trend line then has an audit trail
+     * rather than appearing as a mysterious jump.
+     *
+     * @return string e.g. "v2:forum50-bbb20-collab15-msg15".
+     */
+    public static function get_social_weights_signature(): string {
+        $parts = [];
+        foreach (self::get_social_weights() as $key => $fraction) {
+            $parts[] = $key . round($fraction * 100);
+        }
+        return 'v' . self::SOCIAL_METRIC_VERSION . ':' . implode('-', $parts);
+    }
+
+    /**
      * Human-readable summary of the current feedback-quality weights, e.g.
      * "coverage 30%, depth 20%, ...". Used in the "How is this determined" card
      * so the methodology shown always matches the configured weights.
@@ -6530,6 +6608,10 @@ class report extends \grade_report {
         $missedstudents = []; // For the cohort diagnostic card.
         $extensionstudents = [];
 
+        // Social-presence composite sub-weights (admin-configurable), resolved
+        // once for the whole cohort rather than per student.
+        $socialweights = self::get_social_weights();
+
         foreach ($userids as $uid) {
             $riskflags = 0;
             $flags = [];
@@ -6572,12 +6654,25 @@ class report extends \grade_report {
                 ? min(100, round(($mymsgs / $avgmessages) * 50))
                 : ($mymsgs > 0 ? 50 : 0);
 
-            // Weighted composite: forum 50%, BBB 20%, collaborative 15%, messaging 15%.
-            // If BBB is not installed, redistribute weight to forum.
+            // Weighted composite of interaction signals using admin-configurable
+            // weights (gradereport_coifish/sp_weight_*). When BigBlueButton is not
+            // in use its weight is redistributed proportionally across the
+            // remaining signals so the composite always spans 0–100.
             if ($totalbbbsessions > 0) {
-                $sprate = round($forumrate * 0.50 + $bbbrate * 0.20 + $collabrate * 0.15 + $msgrate * 0.15);
+                $sprate = round(
+                    $forumrate * $socialweights['forum']
+                    + $bbbrate * $socialweights['bbb']
+                    + $collabrate * $socialweights['collab']
+                    + $msgrate * $socialweights['msg']
+                );
             } else {
-                $sprate = round($forumrate * 0.65 + $collabrate * 0.20 + $msgrate * 0.15);
+                $nonbbb = $socialweights['forum'] + $socialweights['collab'] + $socialweights['msg'];
+                $nonbbb = $nonbbb > 0 ? $nonbbb : 1;
+                $sprate = round(
+                    $forumrate * ($socialweights['forum'] / $nonbbb)
+                    + $collabrate * ($socialweights['collab'] / $nonbbb)
+                    + $msgrate * ($socialweights['msg'] / $nonbbb)
+                );
             }
             $splevel = $this->get_coi_level($sprate, $spthresholds);
             $splevels[$splevel['class']]++;
@@ -6909,6 +7004,59 @@ class report extends \grade_report {
             ];
         };
 
+        // Course Access (behavioural engagement) — deliberately NOT a social-
+        // presence signal. Surfaced as its own prescriptive card because faculty
+        // (and Moodle's own analytics) treat "hasn't accessed the course" as a
+        // front-line disengagement signal. Last access comes from the cheap
+        // {user_lastaccess} table; a student who has never accessed is flagged
+        // only once the course has been running longer than the inactivity
+        // window, so a fresh enrolment is not mistaken for disengagement.
+        $accessthreshold = $staledays;
+        $coursestart = (int)(get_course($this->courseid)->startdate ?? 0);
+        $effnowaccess = $this->effective_now();
+        $lastaccessmap = [];
+        if (!empty($userids)) {
+            [$insqlla, $inparamsla] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'la');
+            $larecords = $DB->get_records_sql(
+                "SELECT userid, timeaccess
+                   FROM {user_lastaccess}
+                  WHERE courseid = :courseid AND userid $insqlla",
+                array_merge(['courseid' => $this->courseid], $inparamsla)
+            );
+            foreach ($larecords as $rec) {
+                $lastaccessmap[(int)$rec->userid] = (int)$rec->timeaccess;
+            }
+        }
+        $noaccessstudents = [];
+        foreach ($userids as $uid) {
+            $lastaccess = $lastaccessmap[$uid] ?? 0;
+            if ($lastaccess > 0) {
+                $daysoffline = (int)floor(($effnowaccess - $lastaccess) / 86400);
+                if ($daysoffline < $accessthreshold) {
+                    continue;
+                }
+                $metric = get_string('cohort_access_metric_days', $component, $daysoffline);
+            } else {
+                // Never accessed: only a concern once the course is old enough.
+                if (!($coursestart > 0 && ($effnowaccess - $coursestart) >= $accessthreshold * 86400)) {
+                    continue;
+                }
+                $daysoffline = null;
+                $metric = get_string('cohort_access_metric_never', $component);
+            }
+            $noaccessstudents[] = [
+                'userid' => $uid,
+                'fullname' => fullname($enrolledusers[$uid]),
+                'days' => $daysoffline,
+                'metric' => $metric,
+                'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
+                    'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
+                ]))->out(false),
+            ];
+        }
+        $noaccesscount = count($noaccessstudents);
+        $noaccesspct = $usercount > 0 ? round(($noaccesscount / $usercount) * 100) : 0;
+
         $cards = [];
 
         // Low social presence.
@@ -7128,6 +7276,55 @@ class report extends \grade_report {
                 ]),
                 'action' => get_string('cohort_card_stale_action', $component, (object)[
                     'names' => $stalenamelist, 'count' => $stalecount,
+                ]),
+            ], $detail);
+        }
+
+        // Course access (behavioural engagement) — prescriptive early-warning
+        // card. Reuses the inactivity triggers, being the same disengagement
+        // family as the stale card.
+        if (
+            $noaccesscount >= $triggers['stale_count']
+            || ($usercount > 0 && $noaccesspct >= $triggers['stale_pct'])
+        ) {
+            $accessnames = array_column(array_slice($noaccessstudents, 0, 3), 'fullname');
+            $accessnamelist = implode(', ', $accessnames);
+            if ($noaccesscount > 3) {
+                $accessnamelist .= ' ' . get_string('cohort_and_others', $component, $noaccesscount - 3);
+            }
+            $detail = $builddetail(
+                [
+                    ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
+                    [
+                        'label' => get_string('detail_metric_affected', $component),
+                        'value' => $noaccesscount . ' (' . $noaccesspct . '%)',
+                    ],
+                ],
+                [
+                    [
+                        'label' => get_string('detail_threshold_trigger', $component),
+                        'value' => get_string('detail_threshold_access_trigger', $component),
+                    ],
+                    [
+                        'label' => get_string('detail_threshold_window', $component),
+                        'value' => get_string('detail_threshold_access_window', $component, $accessthreshold),
+                    ],
+                ],
+                $noaccessstudents,
+                'detail_method_access',
+                'detail_rationale_access'
+            );
+            $cards[] = array_merge([
+                'icon' => 'sign-in',
+                'diagnostictype' => 'cohort_access',
+                'severity' => $noaccesspct >= 50 ? 'danger' : 'warning',
+                'title' => get_string('cohort_card_access_title', $component),
+                'diagnostic' => get_string('cohort_card_access_diagnostic', $component, (object)[
+                    'percent' => $noaccesspct, 'count' => $noaccesscount,
+                    'days' => $accessthreshold,
+                ]),
+                'action' => get_string('cohort_card_access_action', $component, (object)[
+                    'names' => $accessnamelist, 'count' => $noaccesscount,
                 ]),
             ], $detail);
         }

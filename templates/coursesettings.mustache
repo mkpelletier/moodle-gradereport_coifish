@@ -13,6 +13,9 @@
     * showlongitudinal (bool) - Whether to show longitudinal section.
     * longitudinaloptions (array) - Longitudinal override options.
     * gamificationenabled (bool) - Whether gamification is currently enabled.
+    * dashboardoptions (array) - Pulse enabled override options (use site default / on / off).
+    * studentdashboardinterval (int|string) - Pulse frequency override, or empty to use the site default.
+    * sitedashboardinterval (int) - The site default pulse frequency (days).
     * haswidgets (bool) - Whether site-enabled widgets exist.
     * widgets (array) - Widget override checkboxes.
 
@@ -121,6 +124,38 @@
             </div>
             <small class="form-text text-muted">
                 {{#str}}coursesettings_gamification_enabled_desc, gradereport_coifish{{/str}}
+            </small>
+        </div>
+    </div>
+
+    {{! Student pulse dashboard override (use site default / on / off) }}
+    <div class="form-group row mb-3">
+        <label class="col-md-3 col-form-label" for="student_dashboard_enabled"><strong>
+            {{#str}}coursesettings_student_dashboard, gradereport_coifish{{/str}}
+        </strong></label>
+        <div class="col-md-6">
+            <select class="form-select" id="student_dashboard_enabled" name="student_dashboard_enabled">
+                {{#dashboardoptions}}
+                    <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
+                {{/dashboardoptions}}
+            </select>
+            <small class="form-text text-muted">
+                {{#str}}coursesettings_student_dashboard_desc, gradereport_coifish{{/str}}
+            </small>
+        </div>
+    </div>
+
+    {{! Pulse frequency override (blank = use the site default) }}
+    <div class="form-group row mb-3">
+        <label class="col-md-3 col-form-label" for="student_dashboard_interval_days"><strong>
+            {{#str}}coursesettings_student_dashboard_interval, gradereport_coifish{{/str}}
+        </strong></label>
+        <div class="col-md-3">
+            <input type="number" class="form-control" id="student_dashboard_interval_days"
+                   name="student_dashboard_interval_days" min="1" max="120"
+                   value="{{studentdashboardinterval}}" placeholder="{{sitedashboardinterval}}">
+            <small class="form-text text-muted">
+                {{#str}}coursesettings_student_dashboard_interval_desc, gradereport_coifish, {{sitedashboardinterval}}{{/str}}
             </small>
         </div>
     </div>

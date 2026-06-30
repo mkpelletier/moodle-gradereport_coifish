@@ -52,6 +52,8 @@ class intervention_templates {
         'coi_peerconnection_low' => 'engagement',
         // Inactive for a while.
         'cohort_stale' => 'stale',
+        // Not accessing the course at all (behavioural early warning).
+        'cohort_access' => 'stale',
         // Feedback not opened.
         'cohort_feedback' => 'feedback',
         'feedback_low' => 'feedback',

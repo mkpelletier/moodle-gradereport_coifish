@@ -39,4 +39,11 @@ $functions = [
         'ajax' => true,
         'capabilities' => 'gradereport/coifish:intervene',
     ],
+    'gradereport_coifish_mute_pulse' => [
+        'classname' => 'gradereport_coifish\external\mute_pulse',
+        'description' => 'Mute the student pulse dashboard for the current user in a course.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'gradereport/coifish:view',
+    ],
 ];

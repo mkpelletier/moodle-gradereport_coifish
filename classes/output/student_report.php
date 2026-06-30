@@ -227,17 +227,15 @@ class student_report implements renderable, templatable {
         $data->widgetstop = ($this->resolve_setting('widgetposition', 'top') === 'top');
 
         // Teacher-only insights tab: diagnostic + prescriptive analytics.
-        // Gate behind site/course show_insights setting.
+        // Course-level overrides live in the course_<id> JSON blob; the
+        // show_longitudinal gate below still reads from it directly.
         $configkey = 'course_' . $this->report->courseid;
         $raw = get_config('gradereport_coifish', $configkey);
         $coursesettings = $raw ? json_decode($raw, true) : [];
-        $courseoverride = $coursesettings['show_insights'] ?? '';
-        if ($courseoverride !== '') {
-            $showinsights = ($courseoverride === '1');
-        } else {
-            $siteinsights = get_config('gradereport_coifish', 'show_insights');
-            $showinsights = ($siteinsights === false || $siteinsights !== '0');
-        }
+
+        // Gate behind site/course show_insights via the shared resolver so this
+        // matches the summary view and the course nav node.
+        $showinsights = gradereport_coifish_insights_enabled($this->report->courseid);
         $data->isteacherview = $this->isteacherview && $showinsights;
         if ($data->isteacherview) {
             $data->insights = $this->report->get_insights_data();

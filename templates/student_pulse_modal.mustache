@@ -1,0 +1,222 @@
+{{!
+    @template gradereport_coifish/student_pulse_modal
+
+    Student-facing periodic pulse modal. Self-referenced progress only — no
+    peer comparison, and no raw numbers (except the real course mark): each
+    other measure is a friendly level (Just getting going → Excellent) plus a
+    direction word. Rendered server-side and shown on course entry by the
+    gradereport_coifish/student_pulse AMD module. Two-pane dashboard layout —
+    a summary pane (hero ring + celebration chips) beside a grid of metric
+    cards with Bootstrap-collapse drill-downs — that stacks to one column on
+    small screens so it fits a single box on desktop.
+
+    Context variables required for this template:
+    * courseid (int) - The course ID (read by the AMD module for the mute action).
+    * coursename (string) - Course full name.
+    * headline (string) - Encouraging headline resolved server-side.
+    * hasoverall (bool) - Whether an overall level is available.
+    * herobandlabel (string) - Overall level word (e.g. "Going strong").
+    * heroringstyle (string) - Inline conic-gradient style for the hero ring fill.
+    * herotrendclass / herotrendicon / herotrendlabel - Hero trend chip.
+    * hasstreak (bool) / streaklabel (string) - Improving-streak chip.
+    * ispersonalbest (bool) - Personal-best chip.
+    * metrics (array) - Per-metric cards {key, collapseid, friendlylabel, icon,
+        levellabel, ringstyle, hasdelta, trendclass, trendicon, trendlabel,
+        meaning, howcalculated}. For "grade", levellabel is the real percentage
+        and trendlabel is the point change.
+    * prescriptions (array) - One or two {text} suggestions.
+    * accesslabel (string) / accessok (bool) - Course-visit note.
+
+    Example context (json):
+    {
+        "courseid": 2,
+        "coursename": "Intro to Theology",
+        "headline": "A new personal best — brilliant work!",
+        "hasoverall": true,
+        "herobandlabel": "Going strong",
+        "heroringstyle": "background: conic-gradient(var(--coifish-pulse-accent) 0% 80%, var(--coifish-pulse-track) 80% 100%);",
+        "herotrendclass": "gradereport-coifish-pulse-trend-up",
+        "herotrendicon": "arrow-up",
+        "herotrendlabel": "Heading in the right direction",
+        "hasstreak": true,
+        "streaklabel": "Improving 2 times in a row",
+        "ispersonalbest": true,
+        "metrics": [{
+            "key": "engagement", "collapseid": "gradereport-coifish-pulse-m-engagement",
+            "friendlylabel": "Showing up", "icon": "bolt", "levellabel": "Coming along",
+            "ringstyle": "background: conic-gradient(var(--coifish-pulse-accent) 0% 60%, var(--coifish-pulse-track) 60% 100%);",
+            "hasdelta": true, "trendclass": "gradereport-coifish-pulse-trend-down",
+            "trendicon": "arrow-down", "trendlabel": "Eased off",
+            "meaning": "...", "howcalculated": "..."
+        }],
+        "prescriptions": [{"text": "Reply to one peer's discussion post this week."}],
+        "accesslabel": "You have visited recently — keep it up!",
+        "accessok": true
+    }
+
+    @package    gradereport_coifish
+    @copyright  2026 South African Theological Seminary (ict@sats.ac.za)
+    @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+}}
+<div class="modal fade gradereport-coifish-pulse" id="gradereport-coifish-pulse-modal" tabindex="-1"
+     role="dialog" aria-labelledby="gradereport-coifish-pulse-title" aria-hidden="true"
+     data-courseid="{{courseid}}">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="me-auto">
+                    <h5 class="modal-title" id="gradereport-coifish-pulse-title">{{headline}}<button
+                            type="button"
+                            class="btn btn-link p-0 align-baseline gradereport-coifish-pulse-help-btn"
+                            data-bs-toggle="collapse" data-bs-target="#gradereport-coifish-pulse-help"
+                            aria-expanded="false" aria-controls="gradereport-coifish-pulse-help"
+                            aria-label="{{#str}}pulse_help_title, gradereport_coifish{{/str}}"><i
+                            class="fa fa-question-circle-o" aria-hidden="true"></i></button></h5>
+                    <div class="gradereport-coifish-pulse-sub">{{coursename}}</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                        aria-label="{{#str}}closebuttontitle{{/str}}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="collapse gradereport-coifish-pulse-help" id="gradereport-coifish-pulse-help">
+                    <div class="gradereport-coifish-pulse-help-inner">
+                        <strong>{{#str}}pulse_help_title, gradereport_coifish{{/str}}</strong>
+                        <p class="mb-0">{{helpbody}}</p>
+                    </div>
+                </div>
+                <div class="row g-3 align-items-start">
+                    {{! Summary pane }}
+                    <div class="col-12 col-md-5 gradereport-coifish-pulse-summary text-center">
+                        {{#hasoverall}}
+                        <div class="gradereport-coifish-pulse-hero">
+                            <div class="gradereport-coifish-pulse-hero-ring" style="{{heroringstyle}}"
+                                 role="img" aria-label="{{#str}}pulse_a11y_overall, gradereport_coifish, {{herobandlabel}}{{/str}}">
+                                <div class="gradereport-coifish-pulse-hero-inner">
+                                    <i class="fa fa-rocket gradereport-coifish-pulse-hero-icon" aria-hidden="true"></i>
+                                </div>
+                            </div>
+                            <div class="gradereport-coifish-pulse-hero-band">{{herobandlabel}}</div>
+                            <div class="gradereport-coifish-pulse-hero-caption">
+                                {{#str}}pulse_hero_caption, gradereport_coifish{{/str}}
+                            </div>
+                            <div class="gradereport-coifish-pulse-trend {{herotrendclass}} mt-1">
+                                <i class="fa fa-{{herotrendicon}}" aria-hidden="true"></i>
+                                <span class="gradereport-coifish-pulse-trend-text">{{herotrendlabel}}</span>
+                            </div>
+                        </div>
+                        {{/hasoverall}}
+                        <div class="gradereport-coifish-pulse-badges">
+                            {{#hasstreak}}
+                            <div class="gradereport-coifish-pulse-badge" title="{{streaklabel}}">
+                                <span class="gradereport-coifish-pulse-badge-medal gradereport-coifish-pulse-badge-streak">
+                                    <i class="fa fa-fire" aria-hidden="true"></i>
+                                </span>
+                                <span class="gradereport-coifish-pulse-badge-name">
+                                    {{#str}}pulse_badge_streak, gradereport_coifish{{/str}}
+                                </span>
+                                <span class="gradereport-coifish-pulse-badge-sub">
+                                    {{#str}}pulse_badge_streak_sub, gradereport_coifish, {{streak}}{{/str}}
+                                </span>
+                            </div>
+                            {{/hasstreak}}
+                            {{#ispersonalbest}}
+                            <div class="gradereport-coifish-pulse-badge">
+                                <span class="gradereport-coifish-pulse-badge-medal gradereport-coifish-pulse-badge-best">
+                                    <i class="fa fa-trophy" aria-hidden="true"></i>
+                                </span>
+                                <span class="gradereport-coifish-pulse-badge-name">
+                                    {{#str}}pulse_badge_best, gradereport_coifish{{/str}}
+                                </span>
+                                <span class="gradereport-coifish-pulse-badge-sub">
+                                    {{#str}}pulse_badge_best_sub, gradereport_coifish{{/str}}
+                                </span>
+                            </div>
+                            {{/ispersonalbest}}
+                        </div>
+                    </div>
+
+                    {{! Metrics + actions pane }}
+                    <div class="col-12 col-md-7">
+                        <div class="row row-cols-2 g-2 gradereport-coifish-pulse-metrics">
+                            {{#metrics}}
+                            <div class="col">
+                                <div class="gradereport-coifish-pulse-card">
+                                    <button type="button" class="gradereport-coifish-pulse-card-face"
+                                            data-bs-toggle="collapse" data-bs-target="#{{collapseid}}"
+                                            aria-expanded="false" aria-controls="{{collapseid}}">
+                                        <span class="gradereport-coifish-pulse-ring" style="{{ringstyle}}" aria-hidden="true">
+                                            <span class="gradereport-coifish-pulse-ring-inner">
+                                                <i class="fa fa-{{icon}}" aria-hidden="true"></i>
+                                            </span>
+                                        </span>
+                                        <span class="gradereport-coifish-pulse-card-label">{{friendlylabel}}</span>
+                                        <span class="gradereport-coifish-pulse-card-level">{{levellabel}}</span>
+                                        {{#hasdelta}}
+                                        <span class="gradereport-coifish-pulse-trend {{trendclass}}">
+                                            <i class="fa fa-{{trendicon}}" aria-hidden="true"></i>
+                                            <span class="gradereport-coifish-pulse-trend-text">{{trendlabel}}</span>
+                                        </span>
+                                        {{/hasdelta}}
+                                        <i class="fa fa-chevron-down gradereport-coifish-pulse-chevron" aria-hidden="true"></i>
+                                    </button>
+                                    <div class="collapse gradereport-coifish-pulse-drill" id="{{collapseid}}">
+                                        <div class="gradereport-coifish-pulse-drill-inner">
+                                            <p class="gradereport-coifish-pulse-drill-heading">
+                                                {{#str}}pulse_drill_meaning, gradereport_coifish{{/str}}
+                                            </p>
+                                            <p class="gradereport-coifish-pulse-drill-text">{{meaning}}</p>
+                                            <p class="gradereport-coifish-pulse-drill-heading">
+                                                {{#str}}pulse_drill_how, gradereport_coifish{{/str}}
+                                            </p>
+                                            <p class="gradereport-coifish-pulse-drill-text mb-0">{{howcalculated}}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {{/metrics}}
+                        </div>
+
+                        {{#hasprescriptions}}
+                        <div class="gradereport-coifish-pulse-suggestions mt-3">
+                            <p class="gradereport-coifish-pulse-suggestions-title">
+                                <i class="fa fa-lightbulb-o me-1" aria-hidden="true"></i>
+                                {{#str}}pulse_prescriptions_title, gradereport_coifish{{/str}}
+                            </p>
+                            <ul class="mb-0">
+                                {{#prescriptions}}<li>{{text}}</li>{{/prescriptions}}
+                            </ul>
+                        </div>
+                        {{/hasprescriptions}}
+                        {{#hasduedates}}
+                        <div class="gradereport-coifish-pulse-suggestions mt-3">
+                            <p class="gradereport-coifish-pulse-suggestions-title">
+                                <i class="fa fa-calendar-o me-1" aria-hidden="true"></i>
+                                {{#str}}pulse_duedates_title, gradereport_coifish{{/str}}
+                            </p>
+                            <ul class="mb-1">
+                                {{#duedates}}<li><i class="fa fa-{{icon}} me-1" aria-hidden="true"></i><a href="{{url}}">{{name}}</a> — {{datestr}}</li>{{/duedates}}
+                            </ul>
+                            <p class="gradereport-coifish-pulse-duedates-nudge mb-0">
+                                {{#str}}pulse_duedates_nudge, gradereport_coifish{{/str}}
+                            </p>
+                        </div>
+                        {{/hasduedates}}
+
+                        <p class="gradereport-coifish-pulse-access {{#accessok}}gradereport-coifish-pulse-access-ok{{/accessok}} mt-2 mb-0">
+                            <i class="fa fa-clock-o me-1" aria-hidden="true"></i>
+                            {{accesslabel}}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link btn-sm text-muted me-auto" data-action="pulse-mute">
+                    {{#str}}pulse_mute, gradereport_coifish{{/str}}
+                </button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                    {{#str}}pulse_dismiss, gradereport_coifish{{/str}}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

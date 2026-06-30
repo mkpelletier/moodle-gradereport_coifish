@@ -134,5 +134,29 @@ function xmldb_gradereport_coifish_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026040102, 'gradereport', 'coifish');
     }
 
+    if ($oldversion < 2026062901) {
+        // Student-facing fortnightly pulse snapshot table.
+        $table = new xmldb_table('gradereport_coifish_student_pulse');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('periodstart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('grade', XMLDB_TYPE_NUMBER, '7, 2', null, null, null, null);
+        $table->add_field('engagement', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('social', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('selfregulation', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('feedbackpct', XMLDB_TYPE_INTEGER, '3', null, null, null, null);
+        $table->add_field('daysoffline', XMLDB_TYPE_INTEGER, '5', null, null, null, null);
+        $table->add_field('timecomputed', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('course_user_period', XMLDB_INDEX_UNIQUE, ['courseid', 'userid', 'periodstart']);
+        $table->add_index('userid', XMLDB_INDEX_NOTUNIQUE, ['userid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026062901, 'gradereport', 'coifish');
+    }
+
     return true;
 }
