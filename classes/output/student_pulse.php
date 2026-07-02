@@ -134,6 +134,7 @@ class student_pulse implements renderable, templatable {
      * not resolved here.
      *
      * @param int $now Reference time.
+     * @param int $horizondays Only include deadlines within this many days from now.
      * @param int $limit Maximum rows.
      * @return array List of ['name', 'url', 'icon', 'datestr'].
      */

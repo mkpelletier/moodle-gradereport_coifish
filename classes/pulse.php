@@ -142,10 +142,11 @@ class pulse {
         if ($periodstart <= 0) {
             return 0;
         }
-        if ($DB->record_exists('gradereport_coifish_student_pulse', [
+        $alreadycaptured = $DB->record_exists('gradereport_coifish_student_pulse', [
             'courseid' => $courseid,
             'periodstart' => $periodstart,
-        ])) {
+        ]);
+        if ($alreadycaptured) {
             return 0;
         }
 

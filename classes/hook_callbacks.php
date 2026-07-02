@@ -63,8 +63,9 @@ class hook_callbacks {
             return;
         }
         // Students only — graders get the teacher analytics, not this modal.
-        if (has_capability('moodle/grade:viewall', $context)
-            || !has_capability('gradereport/coifish:view', $context)) {
+        $isgrader = has_capability('moodle/grade:viewall', $context);
+        $canview = has_capability('gradereport/coifish:view', $context);
+        if ($isgrader || !$canview) {
             return;
         }
         if (get_user_preferences(pulse::PREF_MUTED . $courseid, 0)) {
