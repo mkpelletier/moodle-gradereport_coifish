@@ -418,6 +418,168 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
+     * Zero-weight categories are shown when visible and hidden only by visibility.
+     */
+    public function test_zero_weight_categories_follow_visibility(): void {
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $student = $generator->create_user();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($student->id, $course->id, 'student');
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+
+        $coursecat = \grade_category::fetch_course_category($course->id);
+        $coursecat->aggregation = GRADE_AGGREGATE_WEIGHTED_MEAN;
+        $coursecat->update();
+
+        // One weighted category, plus a visible and a hidden zero-weight category.
+        $cats = [];
+        foreach (['Graded' => 100, 'Required' => 0, 'Hidden required' => 0] as $name => $coef) {
+            $cat = new \grade_category();
+            $cat->courseid = $course->id;
+            $cat->fullname = $name;
+            $cat->aggregation = GRADE_AGGREGATE_WEIGHTED_MEAN;
+            $cat->insert();
+            $catitem = $cat->get_grade_item();
+            $catitem->aggregationcoef = $coef;
+            $catitem->update();
+
+            $assign = $generator->create_module('assign', ['course' => $course->id]);
+            $gi = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'assign',
+                'iteminstance' => $assign->id, 'courseid' => $course->id]);
+            $gi->categoryid = $cat->id;
+            $gi->aggregationcoef = 1;
+            $gi->update();
+            $cats[$name] = ['cat' => $cat, 'item' => $gi];
+        }
+        // Cascade, as the gradebook's hide action does, so the category total item is hidden.
+        $cats['Hidden required']['cat']->set_hidden(1, true);
+
+        // Only the zero-weight category is graded, so the running total stays empty.
+        $cats['Required']['item']->update_final_grade($student->id, 90.0, 'test');
+
+        $names = function (report $report): array {
+            return array_column($report->get_grade_data(), 'categoryname');
+        };
+
+        $report = $this->create_report($course, $student->id);
+        $this->assertEquals(['Graded', 'Required'], $names($report));
+        $this->assertEquals('–', $report->get_running_total()['percentage']);
+
+        $required = $report->get_grade_data()[1];
+        $this->assertEquals(0.0, $required['categoryweight_raw']);
+        $this->assertCount(1, $required['items']);
+
+        // With "show hidden" on, a teacher also sees the hidden zero-weight category.
+        $this->setUser($teacher);
+        $report = $this->create_report($course, $student->id, true);
+        $this->assertEquals(['Graded', 'Required', 'Hidden required'], $names($report));
+    }
+
+    /**
+     * Find an insight card by diagnostic type.
+     *
+     * @param array $cards Insight cards.
+     * @param string $type Diagnostic type.
+     * @return array|null The card, or null if absent.
+     */
+    protected function find_card(array $cards, string $type): ?array {
+        foreach ($cards as $card) {
+            if (($card['diagnostictype'] ?? '') === $type) {
+                return $card;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * "Feedback not reviewed" is not shown when the student has no graded work to review.
+     */
+    public function test_insights_no_feedback_card_without_graded_items(): void {
+        $this->resetAfterTest(true);
+        set_config('widget_coi_feedbackloop', '1', 'gradereport_coifish');
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $student = $generator->create_user();
+        $generator->enrol_user($student->id, $course->id, 'student');
+        $generator->create_module('assign', ['course' => $course->id]);
+
+        $report = $this->create_report($course, $student->id);
+        $insights = $report->get_insights_data();
+
+        $this->assertNull($this->find_card($insights['cards'], 'feedback_unreviewed'));
+    }
+
+    /**
+     * The low course engagement drill-down includes the student's last course access.
+     */
+    public function test_insights_engagement_card_shows_last_access(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        set_config('widget_coi_learningdepth', '1', 'gradereport_coifish');
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $student = $generator->create_user();
+        $generator->enrol_user($student->id, $course->id, 'student');
+        $generator->create_module('assign', ['course' => $course->id]);
+
+        $report = $this->create_report($course, $student->id);
+        $lastaccess = $report->effective_now() - 3 * DAYSECS;
+        $DB->insert_record('user_lastaccess', (object)[
+            'userid' => $student->id, 'courseid' => $course->id, 'timeaccess' => $lastaccess,
+        ]);
+
+        $card = $this->find_card($report->get_insights_data()['cards'], 'engagement_low');
+        $this->assertNotNull($card);
+        $metrics = array_column($card['metrics'], 'value', 'label');
+        $label = get_string('detail_student_metric_lastaccess', 'gradereport_coifish');
+        $this->assertArrayHasKey($label, $metrics);
+        $this->assertStringContainsString('(3 days ago)', $metrics[$label]);
+    }
+
+    /**
+     * A single student missing a deadline surfaces the cohort missed-deadlines card, first.
+     */
+    public function test_cohort_missed_card_shown_for_single_student(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $students = [];
+        for ($i = 0; $i < 10; $i++) {
+            $students[$i] = $generator->create_user();
+            $generator->enrol_user($students[$i]->id, $course->id, 'student');
+        }
+        $assign = $generator->create_module('assign', [
+            'course' => $course->id, 'name' => 'Essay 1', 'duedate' => time() - DAYSECS,
+        ]);
+        // Everyone submitted except student 0.
+        for ($i = 1; $i < 10; $i++) {
+            $DB->insert_record('assign_submission', (object)[
+                'assignment' => $assign->id, 'userid' => $students[$i]->id, 'status' => 'submitted',
+                'latest' => 1, 'attemptnumber' => 0, 'groupid' => 0,
+                'timecreated' => time(), 'timemodified' => time(),
+            ]);
+        }
+
+        $this->setUser($teacher);
+        $cards = $this->create_report($course, 0)->get_cohort_insights_data()['cards'];
+
+        $this->assertEquals('cohort_missed', $cards[0]['diagnostictype']);
+        $this->assertCount(1, $cards[0]['students']);
+        $this->assertEquals($students[0]->id, $cards[0]['students'][0]['userid']);
+        $this->assertEquals('1: Essay 1', $cards[0]['students'][0]['metric']);
+        $this->assertStringContainsString(fullname($students[0]), $cards[0]['action']);
+    }
+
+    /**
      * Invoke a protected method on a report instance via reflection.
      *
      * @param report $report The report instance.

@@ -1374,14 +1374,15 @@ class report extends \grade_report {
         }
 
         // Calculate the category's weight within its parent.
+        // Zero-weight categories are still shown: they often hold required work
+        // (e.g. completion-tracked activities) that doesn't count towards the grade.
+        // Only visibility decides whether a category is hidden.
         $catweight = $this->get_item_weight($catitem);
 
-        // Skip categories with zero weight — they don't contribute to the final grade.
-        if ($catweight == 0) {
-            return null;
-        }
-
         $effectiveweight = $parenteffectiveweight * $catweight;
+        // Inside a zero-weight category every item has zero effective weight, so
+        // zero-weight items are kept too rather than leaving the category empty.
+        $iszeroweightcat = ($effectiveweight == 0);
 
         $items = [];
         $subcategories = [];
@@ -1395,9 +1396,10 @@ class report extends \grade_report {
                     if ($childitem->is_category_item() || $childitem->is_course_item()) {
                         continue;
                     }
-                    // Skip items with zero weight that aren't extra credit.
+                    // Skip items with zero weight that aren't extra credit (unless
+                    // the whole category is zero-weight).
                     $itemweight = $this->get_item_weight($childitem);
-                    if ($itemweight == 0 && !$this->is_extra_credit($childitem)) {
+                    if (!$iszeroweightcat && $itemweight == 0 && !$this->is_extra_credit($childitem)) {
                         continue;
                     }
                     $haschilditems = true;
@@ -1960,6 +1962,10 @@ class report extends \grade_report {
 
         foreach ($this->gradedata as $cat) {
             $catweight = $cat['categoryweight_raw'] ?? 1.0;
+            // Zero-weight categories are displayed but don't contribute to the total.
+            if ($catweight <= 0) {
+                continue;
+            }
             $result = $this->calculate_category_running_total($cat);
 
             if ($result !== null) {
@@ -5079,7 +5085,8 @@ class report extends \grade_report {
                 $riskcount++;
                 $diagnostic = get_string('insight_trend_diagnostic', $component);
                 $feedbacklow = !empty($widgets['feedback']) && ($widgets['feedback']['percent'] ?? 100) < 50;
-                $coifblow = !empty($widgets['coi_feedbackloop']) && ($widgets['coi_feedbackloop']['percent'] ?? 100) < 50;
+                $coifblow = !empty($widgets['coi_feedbackloop']) && ($widgets['coi_feedbackloop']['total'] ?? 0) > 0
+                    && ($widgets['coi_feedbackloop']['percent'] ?? 100) < 50;
                 if ($feedbacklow || $coifblow) {
                     $diagnostic .= ' ' . get_string('insight_trend_feedback_link', $component);
                 }
@@ -5253,8 +5260,12 @@ class report extends \grade_report {
             ], $detail);
         }
 
-        // 4. Feedback engagement — teaching presence gap.
+        // 4. Feedback engagement — teaching presence gap. Only applies once the
+        // student has graded work to review; with nothing to view it is just noise.
         $feedbackwidget = $widgets['feedback'] ?? $widgets['coi_feedbackloop'] ?? null;
+        if ($feedbackwidget && ($feedbackwidget['total'] ?? 0) <= 0) {
+            $feedbackwidget = null;
+        }
         if ($feedbackwidget) {
             $totalindicators++;
             if ($feedbackwidget['isrisk'] ?? false) {
@@ -5298,12 +5309,25 @@ class report extends \grade_report {
             $engagement = $widgets['coi_learningdepth'];
             if ($engagement['isrisk'] ?? false) {
                 $riskcount++;
+                $lastaccess = (int)$DB->get_field('user_lastaccess', 'timeaccess', [
+                    'userid' => $userid, 'courseid' => $courseid,
+                ]);
+                if ($lastaccess > 0) {
+                    $lastaccessvalue = get_string('detail_student_metric_lastaccess_value', $component, (object)[
+                        'date' => userdate($lastaccess, $datefmt),
+                        'days' => max(0, (int)floor(($this->effective_now() - $lastaccess) / DAYSECS)),
+                    ]);
+                } else {
+                    $lastaccessvalue = get_string('cohort_access_metric_never', $component);
+                }
                 $detail = $buildstudentdetail(
                     [
                         ['label' => get_string('detail_student_metric_engagementlevel', $component),
                          'value' => $engagement['level']['label'] ?? '–'],
                         ['label' => get_string('detail_student_metric_engagementpct', $component),
                          'value' => ($engagement['percent'] ?? 0) . '%'],
+                        ['label' => get_string('detail_student_metric_lastaccess', $component),
+                         'value' => $lastaccessvalue],
                     ],
                     [
                         ['label' => get_string('detail_threshold_trigger', $component),
@@ -6236,15 +6260,17 @@ class report extends \grade_report {
             $source = trim($source);
             if ($source === 'core') {
                 // Core messaging: count messages sent to peers (other enrolled students).
+                // Each IN clause needs its own named params; reusing one set fails.
+                [$insqlmsgto, $inparamsmsgto] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'msgt');
                 $msgcounts = $DB->get_records_sql(
                     "SELECT m.useridfrom AS userid, COUNT(*) AS cnt
                        FROM {messages} m
                        JOIN {message_conversation_members} mcm ON mcm.conversationid = m.conversationid
                       WHERE m.useridfrom $insqlmsg
-                        AND mcm.userid $insqlmsg
+                        AND mcm.userid $insqlmsgto
                         AND m.useridfrom != mcm.userid
                    GROUP BY m.useridfrom",
-                    array_merge($inparamsmsg, $inparamsmsg)
+                    array_merge($inparamsmsg, $inparamsmsgto)
                 );
             } else {
                 // Plugin messaging via logstore.
@@ -6780,10 +6806,12 @@ class report extends \grade_report {
             if ($missedcount >= 1) {
                 $riskflags++;
                 $flags[] = get_string('cohort_flag_missed', $component, $missedcount);
+                // The template escapes the metric, so use the plain (raw) names.
                 $missedstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
-                    'metric' => $missedcount,
+                    'missedcount' => $missedcount,
+                    'metric' => $missedcount . ': ' . implode(', ', $misseddata[$uid]['missedlistraw'] ?? []),
                     'missedlist' => $misseddata[$uid]['missedlist'] ?? [],
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
@@ -7368,15 +7396,22 @@ class report extends \grade_report {
             ], $detail);
         }
 
-        // Missed deadlines — overdue, unsubmitted, no override exception.
+        // Missed deadlines — overdue, unsubmitted, no override exception. Shown
+        // whenever any student has missed work, since each one is actionable;
+        // the cohort triggers only escalate it to high priority.
         $missedaffected = count($missedstudents);
         $missedpct = $usercount > 0 ? round(($missedaffected / $usercount) * 100) : 0;
         $missedtriggered = ($missedaffected >= (int)$triggers['missed_count'])
             || ($missedpct >= (int)$triggers['missed_pct']);
-        if ($missedtriggered) {
+        if ($missedaffected > 0) {
             $missedtotal = 0;
             foreach ($missedstudents as $m) {
-                $missedtotal += (int)$m['metric'];
+                $missedtotal += (int)$m['missedcount'];
+            }
+            $missednames = array_column(array_slice($missedstudents, 0, 5), 'fullname');
+            $missednamelist = implode(', ', $missednames);
+            if ($missedaffected > 5) {
+                $missednamelist .= ' ' . get_string('cohort_and_others', $component, $missedaffected - 5);
             }
             $detail = $builddetail(
                 [
@@ -7402,18 +7437,19 @@ class report extends \grade_report {
                 'detail_method_missed',
                 'detail_rationale_missed'
             );
-            $cards[] = array_merge([
+            // Put it first: missed work is the most immediately actionable signal.
+            array_unshift($cards, array_merge([
                 'icon' => 'calendar-times-o',
                 'diagnostictype' => 'cohort_missed',
-                'severity' => $missedpct >= 30 ? 'danger' : 'warning',
+                'severity' => ($missedtriggered || $missedpct >= 30) ? 'danger' : 'warning',
                 'title' => get_string('cohort_card_missed_title', $component),
                 'diagnostic' => get_string('cohort_card_missed_diagnostic', $component, (object)[
                     'count' => $missedaffected, 'percent' => $missedpct, 'total' => $missedtotal,
                 ]),
                 'action' => get_string('cohort_card_missed_action', $component, (object)[
-                    'count' => $missedaffected,
+                    'count' => $missedaffected, 'names' => $missednamelist,
                 ]),
-            ], $detail);
+            ], $detail));
         }
 
         // Frequent extensions — chronic over-reliance on deadline overrides.

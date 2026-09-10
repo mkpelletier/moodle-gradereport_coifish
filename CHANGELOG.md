@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.11.1] - 2026-09-10
+
+### Changed
+- **Missed-deadlines cohort card is shown whenever any student has missed work.** Previously it only appeared once the cohort trigger (≥ 3 students or ≥ 15% at normal sensitivity) was reached, so one or two students missing a due date were never surfaced. The card now appears for a single affected student, is listed first, names the affected students in its action, and lists each student's missed activities in the drill-down. The cohort trigger now escalates the card to high priority instead of gating it. The intervention button targets exactly the affected students with the "missing work" template.
+- **Low course engagement drill-down shows last course access** (from `{user_lastaccess}`), or "Never accessed the course".
+
+### Fixed
+- **Zero-weighted grade categories are shown in the table view when visible.** Categories with a weight of 0 (e.g. required, completion-tracked work that doesn't count towards the grade) were always hidden, even with "show hidden" on. Only the category's visibility now decides whether it is hidden; zero-weight items inside such categories are shown too. Zero-weight categories are excluded from the running total.
+- **"Feedback not reviewed" is no longer shown when the student has no graded work to review.** The feedback-loop widget flagged risk with zero graded items; the card, its stat chip and the declining-trend feedback cross-reference now require graded work.
+- **Cohort insights no longer throw a database error with the core messaging source.** The peer-messaging query reused one set of named parameters for two IN clauses.
+
 ## [2.11.0] - 2026-06-29
 
 ### Added
