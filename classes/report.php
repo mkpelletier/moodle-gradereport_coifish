@@ -3659,8 +3659,9 @@ class report extends \grade_report {
 
         // Indicator 3: Resource revisiting.
         // Weight: 20% — returning to materials on multiple days = deeper processing.
+        // Days are UTC day buckets: portable across databases (FROM_UNIXTIME is MySQL-only).
         $distinctresourcedays = (int)$DB->count_records_sql(
-            "SELECT COUNT(DISTINCT FROM_UNIXTIME(l.timecreated, '%Y-%m-%d'))
+            "SELECT COUNT(DISTINCT FLOOR(l.timecreated / 86400))
                FROM {logstore_standard_log} l
               WHERE l.courseid = :courseid AND l.userid = :userid
                 AND l.action = 'viewed' AND l.target = 'course_module'
@@ -8883,10 +8884,11 @@ class report extends \grade_report {
             }
         }
 
-        // 8. Distinct active days in the course (overall engagement).
+        // 8. Distinct active days in the course (overall engagement). Days are
+        // UTC day buckets: portable across databases (FROM_UNIXTIME is MySQL-only).
         [$insql8, $inparams8] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'act');
         $activedays = $DB->get_records_sql(
-            "SELECT userid, COUNT(DISTINCT FROM_UNIXTIME(timecreated, '%Y-%m-%d')) AS days
+            "SELECT userid, COUNT(DISTINCT FLOOR(timecreated / 86400)) AS days
                FROM {logstore_standard_log}
               WHERE courseid = :courseid
                 AND userid $insql8

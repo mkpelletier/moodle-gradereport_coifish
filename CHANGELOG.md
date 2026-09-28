@@ -21,6 +21,7 @@
 ### Fixed
 - **Recording views no longer count as live-session attendance.** The cohort BBB signal previously counted any BBB log row (including `Played` recordings and activity edits) and treated a recurring room as a single session.
 - **Peer connection no longer undercounts peers.** Peers replied to and peers who replied were combined with `max()` rather than a union.
+- **Coordinator view and self-regulation widget now work on PostgreSQL.** The "active days" and "resource revisiting" queries used MySQL's `FROM_UNIXTIME()`, which PostgreSQL lacks; they now count distinct UTC day buckets (`FLOOR(timecreated / 86400)`).
 
 ## [2.11.1] - 2026-09-10
 
