@@ -512,4 +512,41 @@ if ($ADMIN->fulltree) {
             '%'
         ));
     }
+
+    // Live-session (BigBlueButton) interaction: adaptive BBB weight and the
+    // extra weight given to peer-only sessions such as student role-plays.
+    $settings->add(new admin_setting_configcheckbox(
+        'gradereport_coifish/sp_bbb_adaptive',
+        get_string('setting_sp_bbb_adaptive', 'gradereport_coifish'),
+        get_string('setting_sp_bbb_adaptive_desc', 'gradereport_coifish'),
+        1
+    ));
+    $settings->add(new admin_setting_configselect(
+        'gradereport_coifish/sp_bbb_peer_multiplier',
+        get_string('setting_sp_bbb_peer_multiplier', 'gradereport_coifish'),
+        get_string('setting_sp_bbb_peer_multiplier_desc', 'gradereport_coifish'),
+        '2',
+        ['1' => '1×', '1.5' => '1.5×', '2' => '2×', '2.5' => '2.5×', '3' => '3×']
+    ));
+
+    // Faculty: credit for student-only sessions in rooms a teacher is responsible for.
+    $settings->add(new admin_setting_configselect(
+        'gradereport_coifish/faculty_bbb_peer_credit',
+        get_string('setting_faculty_bbb_peer_credit', 'gradereport_coifish'),
+        get_string('setting_faculty_bbb_peer_credit_desc', 'gradereport_coifish'),
+        '0.5',
+        ['0' => '0', '0.25' => '0.25', '0.5' => '0.5', '0.75' => '0.75', '1' => '1']
+    ));
+
+    // Teaching presence: share of facilitated live contact in the student score.
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/tp_weight_live',
+        get_string('setting_tp_weight_live', 'gradereport_coifish'),
+        get_string('setting_tp_weight_live_desc', 'gradereport_coifish'),
+        \gradereport_coifish\report::TP_WEIGHT_LIVE_DEFAULT,
+        0,
+        100,
+        5,
+        '%'
+    ));
 }

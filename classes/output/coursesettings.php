@@ -156,6 +156,27 @@ class coursesettings implements renderable, templatable {
             ? $siteinterval
             : \gradereport_coifish\pulse::DEFAULT_INTERVAL_DAYS;
 
+        // Social-presence weight overrides (blank = site weight, shown as placeholder).
+        $data->spweights = [];
+        foreach (\gradereport_coifish\report::SOCIAL_WEIGHT_DEFAULTS as $sig => $default) {
+            $siteval = get_config('gradereport_coifish', 'sp_weight_' . $sig);
+            $data->spweights[] = [
+                'key' => $sig,
+                'label' => get_string('setting_sp_weight_' . $sig, 'gradereport_coifish'),
+                'value' => (string)($this->coursesettings['sp_weight_' . $sig] ?? ''),
+                'placeholder' => ($siteval === false || $siteval === '') ? $default : (int)$siteval,
+            ];
+        }
+        $adaptiveval = (string)($this->coursesettings['sp_bbb_adaptive'] ?? '');
+        $data->adaptiveoptions = [
+            ['value' => '', 'label' => get_string('defaultview_usesite', 'gradereport_coifish'),
+                'selected' => ($adaptiveval === '')],
+            ['value' => '1', 'label' => get_string('setting_enabled', 'gradereport_coifish'),
+                'selected' => ($adaptiveval === '1')],
+            ['value' => '0', 'label' => get_string('setting_disabled', 'gradereport_coifish'),
+                'selected' => ($adaptiveval === '0')],
+        ];
+
         // Widget overrides.
         $data->haswidgets = !empty($this->sitewidgets);
         $data->widgets = [];

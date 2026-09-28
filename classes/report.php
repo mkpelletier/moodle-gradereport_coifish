@@ -250,11 +250,26 @@ class report extends \grade_report {
      * the *shape* of the metric changes (its signals or normalisation), not when
      * an admin merely re-tunes the weights. Version 2 is the first configurable,
      * proportionally-renormalised definition (version 1 was the hardcoded
-     * 50/20/15/15 with a fixed 65/20/15 no-BBB fallback).
+     * 50/20/15/15 with a fixed 65/20/15 no-BBB fallback). Version 3 replaces
+     * BBB attendance counting with live-session interaction (see
+     * {@see live_sessions}), adds per-course weight overrides and scales the
+     * BBB weight with how much the course relies on live sessions.
      *
      * @var int
      */
-    public const SOCIAL_METRIC_VERSION = 2;
+    public const SOCIAL_METRIC_VERSION = 3;
+
+    /** @var float Weighted live sessions per student at which the BBB weight is unscaled. */
+    public const SOCIAL_BBB_ADAPTIVE_REFERENCE = 4.0;
+
+    /** @var float Smallest adaptive scale factor applied to the BBB weight. */
+    public const SOCIAL_BBB_ADAPTIVE_MIN = 0.5;
+
+    /** @var float Largest adaptive scale factor applied to the BBB weight. */
+    public const SOCIAL_BBB_ADAPTIVE_MAX = 3.0;
+
+    /** @var int Default share (%) of facilitated live contact in student teaching presence. */
+    public const TP_WEIGHT_LIVE_DEFAULT = 30;
 
     /**
      * Default sub-weights (as percentages) for the cohort social-presence
@@ -276,28 +291,89 @@ class report extends \grade_report {
     ];
 
     /**
+     * Read a course's CoIFish settings blob (the course_<id> JSON).
+     *
+     * @param int $courseid Course id.
+     * @return array
+     */
+    protected static function get_course_settings_blob(int $courseid): array {
+        $raw = get_config('gradereport_coifish', 'course_' . $courseid);
+        $decoded = $raw ? json_decode($raw, true) : [];
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Whether the BBB weight scales with a course's live-session intensity.
+     * Course tri-state ('' = site default, '1', '0') overrides the site setting,
+     * which defaults to on.
+     *
+     * @param int|null $courseid Course id, or null for the site setting only.
+     * @return bool
+     */
+    public static function is_social_adaptive(?int $courseid = null): bool {
+        if ($courseid) {
+            $courseval = (string)(self::get_course_settings_blob($courseid)['sp_bbb_adaptive'] ?? '');
+            if ($courseval !== '') {
+                return $courseval === '1';
+            }
+        }
+        $siteval = get_config('gradereport_coifish', 'sp_bbb_adaptive');
+        return ($siteval === false || $siteval === '') ? true : (bool)$siteval;
+    }
+
+    /**
+     * Scale factor applied to the BBB weight for a given live-session intensity
+     * (weighted sessions available per student, peer sessions counted at the
+     * peer multiplier). 4 sessions = unchanged; clamped to [0.5, 3].
+     *
+     * @param float $liveintensity Weighted live sessions per student.
+     * @return float
+     */
+    public static function get_social_bbb_scale(float $liveintensity): float {
+        return max(
+            self::SOCIAL_BBB_ADAPTIVE_MIN,
+            min(self::SOCIAL_BBB_ADAPTIVE_MAX, $liveintensity / self::SOCIAL_BBB_ADAPTIVE_REFERENCE)
+        );
+    }
+
+    /**
      * Cohort social-presence sub-weights, normalised to fractions that sum to 1.
      * Mirrors get_feedback_weights(): reads the admin-configurable percentages,
      * falls back to the defaults, and never collapses to zero if an admin zeroes
      * everything. When BigBlueButton is not in use the caller redistributes the
      * 'bbb' fraction proportionally across the remaining signals.
      *
+     * With a course id, that course's sp_weight_* overrides (blank = site value)
+     * are applied. With a live intensity and adaptive weighting enabled, the BBB
+     * weight is scaled by {@see get_social_bbb_scale()} before normalising, so a
+     * role-play-heavy course leans on live interaction and a course with one
+     * optional webinar barely does.
+     *
+     * @param int|null $courseid Course id for per-course overrides, or null.
+     * @param float|null $liveintensity Weighted live sessions per student, or null to skip scaling.
      * @return array Map of signal => fraction (forum, bbb, collab, msg).
      */
-    public static function get_social_weights(): array {
+    public static function get_social_weights(?int $courseid = null, ?float $liveintensity = null): array {
+        $course = $courseid ? self::get_course_settings_blob($courseid) : [];
         $raw = [];
         $sum = 0.0;
         foreach (self::SOCIAL_WEIGHT_DEFAULTS as $key => $default) {
             $val = get_config('gradereport_coifish', 'sp_weight_' . $key);
             $val = ($val === false || $val === '') ? $default : (float)$val;
-            $val = max(0.0, $val);
-            $raw[$key] = $val;
-            $sum += $val;
+            $courseval = $course['sp_weight_' . $key] ?? '';
+            if ($courseval !== '' && is_numeric($courseval)) {
+                $val = (float)$courseval;
+            }
+            $raw[$key] = max(0.0, $val);
+            $sum += $raw[$key];
         }
         if ($sum <= 0) {
             $raw = self::SOCIAL_WEIGHT_DEFAULTS;
-            $sum = array_sum(self::SOCIAL_WEIGHT_DEFAULTS);
         }
+        if ($liveintensity !== null && self::is_social_adaptive($courseid)) {
+            $raw['bbb'] *= self::get_social_bbb_scale($liveintensity);
+        }
+        $sum = array_sum($raw);
         $out = [];
         foreach ($raw as $key => $val) {
             $out[$key] = $val / $sum;
@@ -313,14 +389,130 @@ class report extends \grade_report {
      * non-comparable — a step-change in a trend line then has an audit trail
      * rather than appearing as a mysterious jump.
      *
-     * @return string e.g. "v2:forum50-bbb20-collab15-msg15".
+     * The weights are the configured (unscaled) ones; "-adapt" marks that the
+     * BBB weight is additionally scaled by each course's live-session intensity.
+     *
+     * @param int|null $courseid Include this course's overrides, or null for site-level.
+     * @return string e.g. "v3:forum50-bbb20-collab15-msg15-adapt".
      */
-    public static function get_social_weights_signature(): string {
+    public static function get_social_weights_signature(?int $courseid = null): string {
         $parts = [];
-        foreach (self::get_social_weights() as $key => $fraction) {
+        foreach (self::get_social_weights($courseid) as $key => $fraction) {
             $parts[] = $key . round($fraction * 100);
         }
-        return 'v' . self::SOCIAL_METRIC_VERSION . ':' . implode('-', $parts);
+        $signature = 'v' . self::SOCIAL_METRIC_VERSION . ':' . implode('-', $parts);
+        if (self::is_social_adaptive($courseid)) {
+            $signature .= '-adapt';
+        }
+        return $signature;
+    }
+
+    /**
+     * Base weights (%) of the coordinator teacher-engagement composite.
+     *
+     * @var array
+     */
+    public const COORDINATOR_WEIGHTS = [
+        'insight' => 12,
+        'grading' => 15,
+        'feedback' => 15,
+        'forum' => 13,
+        'live' => 8,
+        'monitoring' => 10,
+        'content' => 10,
+        'messaging' => 9,
+        'active' => 8,
+    ];
+
+    /**
+     * Coordinator teacher-engagement weights, normalised to fractions that sum
+     * to 1. When the course holds no live sessions the live dimension is dropped
+     * and its weight shared across the others, so teachers are neither rewarded
+     * nor penalised for a course design without BigBlueButton. Otherwise the
+     * live weight scales with the course's live-session intensity when adaptive
+     * weighting is on (the same setting and scale as social presence).
+     *
+     * @param int $courseid Course id.
+     * @param bool $haslive Whether the course has held live sessions.
+     * @param float $intensity Course live-session intensity.
+     * @return array Map of dimension => fraction.
+     */
+    public static function get_coordinator_weights(int $courseid, bool $haslive, float $intensity): array {
+        $raw = self::COORDINATOR_WEIGHTS;
+        if (!$haslive) {
+            unset($raw['live']);
+        } else if (self::is_social_adaptive($courseid)) {
+            $raw['live'] *= self::get_social_bbb_scale($intensity);
+        }
+        $sum = array_sum($raw);
+        return array_map(fn($w) => $w / $sum, $raw);
+    }
+
+    /**
+     * Blend a student's asynchronous social rate (forum/collaborative, 0–100)
+     * with their live-session interaction rate, giving live sessions the share
+     * BBB carries against the forum and collaborative signals in the course's
+     * resolved social weights. This is the single definition used by the
+     * Community engagement widget and by local_coifish snapshots.
+     *
+     * @param int $courseid Course id (for per-course weight overrides).
+     * @param int $asyncrate Forum/collaborative social rate (0–100).
+     * @param array $live Student metrics from {@see live_sessions::get_student()}.
+     * @param float $intensity Course live-session intensity ({@see live_sessions::get_intensity()}).
+     * @param bool $hasasync Whether the student had any asynchronous social opportunity (visible
+     *                       forum discussions or their own contributions). Without one, the live
+     *                       rate stands alone rather than being diluted by an absent forum.
+     * @return int
+     */
+    public static function blend_live_social(
+        int $courseid,
+        int $asyncrate,
+        array $live,
+        float $intensity,
+        bool $hasasync = true
+    ): int {
+        if (($live['available'] ?? 0) <= 0) {
+            return $asyncrate;
+        }
+        if (!$hasasync) {
+            return (int)$live['liverate'];
+        }
+        $weights = self::get_social_weights($courseid, $intensity);
+        $denominator = $weights['forum'] + $weights['bbb'] + $weights['collab'];
+        $b = $denominator > 0 ? $weights['bbb'] / $denominator : 0;
+        return (int)round($asyncrate * (1 - $b) + $live['liverate'] * $b);
+    }
+
+    /**
+     * Share (0–1) of facilitated live contact in student teaching presence.
+     *
+     * @return float
+     */
+    public static function get_tp_live_weight(): float {
+        $val = get_config('gradereport_coifish', 'tp_weight_live');
+        $val = ($val === false || $val === '' || !is_numeric($val)) ? self::TP_WEIGHT_LIVE_DEFAULT : (float)$val;
+        return max(0.0, min(100.0, $val)) / 100;
+    }
+
+    /**
+     * Blend the feedback-review rate with facilitated live contact into one
+     * student teaching-presence rate. Without facilitated sessions the rate is
+     * the feedback rate; without graded feedback it is the live rate.
+     *
+     * @param int $fbtotal Graded items with feedback.
+     * @param int $fbrate Feedback review rate (0–100).
+     * @param array $live Student metrics from {@see live_sessions::get_student()}.
+     * @return int
+     */
+    public static function blend_teaching_rate(int $fbtotal, int $fbrate, array $live): int {
+        if (($live['facilitatedavailable'] ?? 0) <= 0) {
+            return $fbrate;
+        }
+        if ($fbtotal <= 0) {
+            return (int)$live['facilitatedrate'];
+        }
+        $t = self::get_tp_live_weight();
+        return (int)round($fbrate * (1 - $t) + $live['facilitatedrate'] * $t);
     }
 
     /**
@@ -4029,7 +4221,12 @@ class report extends \grade_report {
             );
         }
 
-        $total = $forumposts + $forumdiscussions + $glossaryentries + $wikiedits;
+        // Live sessions (BigBlueButton) attended, with share of voice.
+        $livesessions = live_sessions::for_course($this->courseid, $this->effective_now());
+        $live = $livesessions->get_student($userid);
+
+        $asynctotal = $forumposts + $forumdiscussions + $glossaryentries + $wikiedits;
+        $total = $asynctotal + $live['attended'];
 
         // Build breakdown for display.
         $breakdown = [];
@@ -4044,6 +4241,18 @@ class report extends \grade_report {
         }
         if ($wikiedits > 0) {
             $breakdown[] = ['label' => get_string('pages', 'wiki'), 'count' => $wikiedits];
+        }
+        if ($live['available'] > 0) {
+            $breakdown[] = [
+                'label' => get_string('widget_live_sessions', 'gradereport_coifish'),
+                'count' => $live['attended'] . ' / ' . $live['available'],
+            ];
+        }
+        if ($live['talkminutes'] > 0) {
+            $breakdown[] = [
+                'label' => get_string('widget_live_talkminutes', 'gradereport_coifish'),
+                'count' => $live['talkminutes'],
+            ];
         }
 
         // Group-aware participation rate.
@@ -4079,22 +4288,33 @@ class report extends \grade_report {
         // Breadth against visible discussions, not all discussions.
         $breadth = $visiblediscussions > 0
             ? min(100, round(($threadsparticipated / $visiblediscussions) * 200))
-            : ($total > 0 ? 50 : 0);
+            : ($asynctotal > 0 ? 50 : 0);
         // Volume relative to a reasonable benchmark (5 posts = 100%).
-        $volume = min(100, round($total / 5 * 100));
+        $volume = min(100, round($asynctotal / 5 * 100));
         $participationrate = round($breadth * 0.6 + $volume * 0.4);
+
+        // Blend in live-session interaction using the same share BBB carries in
+        // the cohort composite, so the two views agree.
+        $participationrate = self::blend_live_social(
+            $this->courseid,
+            (int)$participationrate,
+            $live,
+            $livesessions->get_intensity(),
+            $visiblediscussions > 0 || $asynctotal > 0
+        );
 
         $level = $this->get_coi_level($participationrate, $this->get_coi_thresholds('sp', [1, 20, 50, 80]));
 
-        // Recency: when was the student last active in discussions?
-        $lastactive = $DB->get_field_sql(
+        // Recency: when was the student last active in discussions or live sessions?
+        $lastactive = (int)$DB->get_field_sql(
             "SELECT MAX(fp.created)
                FROM {forum_posts} fp
                JOIN {forum_discussions} fd ON fd.id = fp.discussion
               WHERE fd.course = :courseid AND fp.userid = :userid",
             ['courseid' => $this->courseid, 'userid' => $userid]
         );
-        $daysinactive = $lastactive ? round(($this->effective_now() - (int)$lastactive) / 86400) : null;
+        $lastactive = max($lastactive, $live['lastattended']);
+        $daysinactive = $lastactive ? round(($this->effective_now() - $lastactive) / 86400) : null;
         $isstale = ($total > 0 && $daysinactive !== null && $daysinactive >= $this->get_stale_days());
 
         $isrisk = ($level['level'] <= 1) || $isstale;
@@ -4175,7 +4395,10 @@ class report extends \grade_report {
             );
         }
 
-        $total = $peerreplies + $peerassessments + $datarecords;
+        // Live sessions shared with at least one classmate (role-plays, group rooms).
+        $live = live_sessions::for_course($this->courseid, $this->effective_now())->get_student($userid);
+
+        $total = $peerreplies + $peerassessments + $datarecords + $live['peersessions'];
 
         $breakdown = [];
         if ($peerreplies > 0) {
@@ -4194,8 +4417,8 @@ class report extends \grade_report {
         $mygroupids = $usergroups[0] ?? [];
 
         // Peers replied to in forums.
-        $peersrepliedto = (int)$DB->count_records_sql(
-            "SELECT COUNT(DISTINCT parent.userid)
+        $peersrepliedto = $DB->get_fieldset_sql(
+            "SELECT DISTINCT parent.userid
                FROM {forum_posts} fp
                JOIN {forum_posts} parent ON parent.id = fp.parent
                JOIN {forum_discussions} fd ON fd.id = fp.discussion
@@ -4207,8 +4430,8 @@ class report extends \grade_report {
         );
 
         // Peers who replied to this student's posts.
-        $peersreplying = (int)$DB->count_records_sql(
-            "SELECT COUNT(DISTINCT fp.userid)
+        $peersreplying = $DB->get_fieldset_sql(
+            "SELECT DISTINCT fp.userid
                FROM {forum_posts} fp
                JOIN {forum_posts} parent ON parent.id = fp.parent
                JOIN {forum_discussions} fd ON fd.id = fp.discussion
@@ -4219,8 +4442,20 @@ class report extends \grade_report {
             ['courseid' => $this->courseid, 'userid' => $userid, 'userid2' => $userid]
         );
 
-        // Unique peers = union of both directions.
-        $peersengaged = max($peersrepliedto, $peersreplying);
+        // Peers met in small live sessions.
+        if (!empty($live['peerids'])) {
+            $breakdown[] = [
+                'label' => get_string('widget_live_peers', 'gradereport_coifish'),
+                'count' => count($live['peerids']),
+            ];
+        }
+
+        // Unique peers = union of both forum directions and live co-attendance.
+        $peersengaged = count(array_unique(array_merge(
+            array_map('intval', $peersrepliedto),
+            array_map('intval', $peersreplying),
+            $live['peerids']
+        )));
 
         // Active peers: group-aware count of students who could be interacted with.
         if (!empty($mygroupids)) {
@@ -4245,9 +4480,13 @@ class report extends \grade_report {
             );
         }
 
+        // Live co-attendees are evidently reachable peers too, even in a course
+        // with few forum posters.
+        $activeposters = max($activeposters, $peersengaged);
+
         // Peer interaction rate: how many available peers has this student connected with.
         $peerrate = $activeposters > 0
-            ? round(($peersengaged / $activeposters) * 100)
+            ? min(100, round(($peersengaged / $activeposters) * 100))
             : ($total > 0 ? 50 : 0);
 
         $level = $this->get_coi_level($peerrate, $this->get_coi_thresholds('peer', [1, 15, 40, 70]));
@@ -4264,6 +4503,9 @@ class report extends \grade_report {
                 AND fp.parent != 0",
             ['courseid' => $this->courseid, 'userid' => $userid, 'userid2' => $userid]
         );
+        if ($live['peersessions'] > 0) {
+            $lastactive = max((int)$lastactive, $live['lastattended']);
+        }
         $daysinactive = $lastactive ? round(($this->effective_now() - (int)$lastactive) / 86400) : null;
         $isstale = ($total > 0 && $daysinactive !== null && $daysinactive >= $this->get_stale_days());
 
@@ -4448,7 +4690,10 @@ class report extends \grade_report {
             ['courseid' => $this->courseid, 'userid' => $userid]
         );
 
-        if ($totalfeedback === 0) {
+        // Facilitated live contact: live sessions attended with a teacher present.
+        $live = live_sessions::for_course($this->courseid, $this->effective_now())->get_student($userid);
+
+        if ($totalfeedback === 0 && $live['facilitatedavailable'] === 0) {
             $level = $this->get_coi_level(0, $this->get_coi_thresholds('tp', [1, 25, 75, 100]));
             $action = get_string('widget_coi_feedbackloop_action_none', 'gradereport_coifish');
             return [
@@ -4483,12 +4728,20 @@ class report extends \grade_report {
             ], $evparams)
         );
 
-        $percent = ($totalfeedback > 0) ? round(($viewedfeedback / $totalfeedback) * 100) : 0;
-        $percent = min(100, $percent);
+        $fbpercent = ($totalfeedback > 0) ? (int)min(100, round(($viewedfeedback / $totalfeedback) * 100)) : 0;
+        $percent = self::blend_teaching_rate($totalfeedback, $fbpercent, $live);
 
         $level = $this->get_coi_level($percent, $this->get_coi_thresholds('tp', [1, 25, 75, 100]));
         $isrisk = ($level['level'] <= 1);
         $unreviewed = $totalfeedback - min($viewedfeedback, $totalfeedback);
+
+        $breakdown = [];
+        if ($live['facilitatedavailable'] > 0) {
+            $breakdown[] = [
+                'label' => get_string('widget_live_facilitated', 'gradereport_coifish'),
+                'count' => $live['facilitatedattended'] . ' / ' . $live['facilitatedavailable'],
+            ];
+        }
 
         $action = $this->get_coi_widget_action('feedbackloop', $level['level'], $isteacherview, false, null, $unreviewed);
 
@@ -4499,8 +4752,8 @@ class report extends \grade_report {
             'total' => $totalfeedback,
             'viewed' => $viewedfeedback,
             'percent' => $percent,
-            'breakdown' => [],
-            'hasbreakdown' => false,
+            'breakdown' => $breakdown,
+            'hasbreakdown' => !empty($breakdown),
             'level' => $level,
             'action' => $action,
             'hasaction' => !empty($action),
@@ -6207,33 +6460,10 @@ class report extends \grade_report {
         }, $participations);
         $avgposts = !empty($allpostcounts) ? array_sum($allpostcounts) / count($allpostcounts) : 0;
 
-        // 2b. BBB session attendance (if installed).
-        $bbbattendance = [];
-        $dbman = $DB->get_manager();
-        if ($dbman->table_exists('bigbluebuttonbn_logs')) {
-            $bbbrecords = $DB->get_records_sql(
-                "SELECT l.userid, COUNT(DISTINCT l.bigbluebuttonbnid) AS sessions
-                   FROM {bigbluebuttonbn_logs} l
-                   JOIN {bigbluebuttonbn} b ON b.id = l.bigbluebuttonbnid
-                  WHERE b.course = :courseid AND l.userid $insql
-               GROUP BY l.userid",
-                array_merge(['courseid' => $this->courseid], $inparams)
-            );
-            foreach ($bbbrecords as $rec) {
-                $bbbattendance[$rec->userid] = (int)$rec->sessions;
-            }
-        }
-        // Count BBB activities whenever the module is installed, not gated on
-        // student attendance. A course with five scheduled BBB sessions and
-        // zero recorded attendance should still surface "5" so the teacher
-        // and coordinator know the activities exist.
-        $totalbbbsessions = 0;
-        if ($dbman->table_exists('bigbluebuttonbn')) {
-            $totalbbbsessions = (int)$DB->count_records_sql(
-                "SELECT COUNT(DISTINCT id) FROM {bigbluebuttonbn} WHERE course = :courseid",
-                ['courseid' => $this->courseid]
-            );
-        }
+        // 2b. Live-session (BigBlueButton) interaction: attendance, share of
+        // voice, peer-only vs facilitated sittings. See live_sessions.
+        $livesessions = live_sessions::for_course($this->courseid, $this->effective_now());
+        $haslivesessions = $livesessions->has_sessions();
 
         // 2c. Collaborative activity participation (wiki, glossary, database, workshop).
         [$insqlcollab, $inparamscollab] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'collab');
@@ -6634,9 +6864,10 @@ class report extends \grade_report {
         $missedstudents = []; // For the cohort diagnostic card.
         $extensionstudents = [];
 
-        // Social-presence composite sub-weights (admin-configurable), resolved
-        // once for the whole cohort rather than per student.
-        $socialweights = self::get_social_weights();
+        // Social-presence composite sub-weights (admin-configurable, with course
+        // overrides and BBB scaled by live-session intensity), resolved once for
+        // the whole cohort rather than per student.
+        $socialweights = self::get_social_weights($this->courseid, $livesessions->get_intensity());
 
         foreach ($userids as $uid) {
             $riskflags = 0;
@@ -6658,12 +6889,9 @@ class report extends \grade_report {
             // Forum composite (breadth + volume).
             $forumrate = round($breadthrate * 0.6 + $volumerate * 0.4);
 
-            // BBB attendance rate.
-            $bbbrate = 0;
-            if ($totalbbbsessions > 0) {
-                $mysessions = $bbbattendance[$uid] ?? 0;
-                $bbbrate = min(100, round(($mysessions / $totalbbbsessions) * 100));
-            }
+            // Live-session interaction rate.
+            $live = $livesessions->get_student($uid);
+            $bbbrate = $live['liverate'];
 
             // Collaborative activity rate (relative to cohort).
             $mycollabs = isset($collabcounts[$uid]) ? (int)$collabcounts[$uid]->activities : 0;
@@ -6681,25 +6909,24 @@ class report extends \grade_report {
                 : ($mymsgs > 0 ? 50 : 0);
 
             // Weighted composite of interaction signals using admin-configurable
-            // weights (gradereport_coifish/sp_weight_*). When BigBlueButton is not
-            // in use its weight is redistributed proportionally across the
-            // remaining signals so the composite always spans 0–100.
-            if ($totalbbbsessions > 0) {
-                $sprate = round(
-                    $forumrate * $socialweights['forum']
-                    + $bbbrate * $socialweights['bbb']
-                    + $collabrate * $socialweights['collab']
-                    + $msgrate * $socialweights['msg']
-                );
-            } else {
-                $nonbbb = $socialweights['forum'] + $socialweights['collab'] + $socialweights['msg'];
-                $nonbbb = $nonbbb > 0 ? $nonbbb : 1;
-                $sprate = round(
-                    $forumrate * ($socialweights['forum'] / $nonbbb)
-                    + $collabrate * ($socialweights['collab'] / $nonbbb)
-                    + $msgrate * ($socialweights['msg'] / $nonbbb)
-                );
+            // weights (gradereport_coifish/sp_weight_*). A signal the student had
+            // no opportunity for — no forum discussions visible to them, or no
+            // live sessions open to them — is dropped and its weight shared
+            // proportionally across the rest, so the composite always spans 0–100.
+            $signals = ['collab' => $collabrate, 'msg' => $msgrate];
+            if ($myvisible > 0 || $postcount > 0) {
+                $signals['forum'] = $forumrate;
             }
+            if ($live['available'] > 0) {
+                $signals['bbb'] = $bbbrate;
+            }
+            $weightsum = 0.0;
+            $weighted = 0.0;
+            foreach ($signals as $signal => $rate) {
+                $weightsum += $socialweights[$signal];
+                $weighted += $rate * $socialweights[$signal];
+            }
+            $sprate = $weightsum > 0 ? round($weighted / $weightsum) : 0;
             $splevel = $this->get_coi_level($sprate, $spthresholds);
             $splevels[$splevel['class']]++;
             // Discussion reading — silent learner detection.
@@ -6720,6 +6947,12 @@ class report extends \grade_report {
                     'fullname' => fullname($enrolledusers[$uid]),
                     'metric' => $postcount . ' posts in ' . $threads . '/' . $myvisible
                         . ' discussions (' . $sprate . '%)'
+                        . ($live['available'] > 0
+                            ? ' · ' . get_string('cohort_live_label', $component, (object)[
+                                'attended' => $live['attended'],
+                                'available' => $live['available'],
+                            ])
+                            : '')
                         . ($issilent ? ' · ' . get_string('cohort_silent_label', $component, $dvcount) : ''),
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
@@ -6764,20 +6997,29 @@ class report extends \grade_report {
                 ];
             }
 
-            // Teaching Presence — feedback review rate.
+            // Teaching Presence — feedback review rate, blended with facilitated
+            // live contact (sessions attended where a teacher was present).
             $fbtotal = isset($feedbacktotals[$uid]) ? (int)$feedbacktotals[$uid]->total : 0;
             $fbviewed = isset($feedbackviews[$uid]) ? (int)$feedbackviews[$uid]->viewed : 0;
-            $fbrate = $fbtotal > 0 ? round(($fbviewed / $fbtotal) * 100) : 0;
-            $tplevel = $this->get_coi_level($fbrate, $tpthresholds);
+            $fbrate = $fbtotal > 0 ? (int)round(($fbviewed / $fbtotal) * 100) : 0;
+            $tprate = self::blend_teaching_rate($fbtotal, $fbrate, $live);
+            $tplevel = $this->get_coi_level($tprate, $tpthresholds);
             $tplevels[$tplevel['class']]++;
-            if ($fbtotal > 0 && $tplevel['level'] <= 1) {
+            if (($fbtotal > 0 || $live['facilitatedavailable'] > 0) && $tplevel['level'] <= 1) {
                 $riskflags++;
                 $lowfeedback++;
                 $flags[] = get_string('cohort_flag_tp', $component);
+                $tpmetric = $fbviewed . ' / ' . $fbtotal . ' (' . $fbrate . '%)';
+                if ($live['facilitatedavailable'] > 0) {
+                    $tpmetric .= ' · ' . get_string('cohort_live_facilitated_label', $component, (object)[
+                        'attended' => $live['facilitatedattended'],
+                        'available' => $live['facilitatedavailable'],
+                    ]);
+                }
                 $lowfeedbackstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
-                    'metric' => $fbviewed . ' / ' . $fbtotal . ' (' . $fbrate . '%)',
+                    'metric' => $tpmetric,
                     'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
                         'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
                     ]))->out(false),
@@ -6838,6 +7080,7 @@ class report extends \grade_report {
                 'sprate' => $sprate,
                 'cprate' => $cprate,
                 'fbrate' => $fbrate,
+                'tprate' => $tprate,
                 'posts' => $postcount,
             ];
 
@@ -6989,6 +7232,27 @@ class report extends \grade_report {
                 'tooltip' => get_string('cohort_tp_ungraded_tip', $component),
             ],
         ];
+
+        // Facilitated live sessions: how many were held and what share of the
+        // (scoped) cohort attended at least one.
+        $livesummary = $haslivesessions ? $livesessions->get_teacher_summary($userids) : ['held' => 0];
+        if ($livesummary['held'] > 0) {
+            $liverating = 'concern';
+            if ($livesummary['reach'] >= 60) {
+                $liverating = 'good';
+            } else if ($livesummary['reach'] >= 30) {
+                $liverating = 'moderate';
+            }
+            $presence['teaching']['teachermetrics'][] = [
+                'label' => get_string('cohort_tp_live', $component),
+                'value' => get_string('cohort_tp_live_value', $component, (object)$livesummary),
+                'rating' => $liverating,
+                'isgood' => $liverating === 'good',
+                'ismoderate' => $liverating === 'moderate',
+                'isconcern' => $liverating === 'concern',
+                'tooltip' => get_string('cohort_tp_live_tip', $component),
+            ];
+        }
 
         // 5. Diagnostic cards.
         // Helper: build a detail block for "read more" modals.
@@ -7696,8 +7960,8 @@ class report extends \grade_report {
             if ($grade === null) {
                 continue; // Skip ungraded students.
             }
-            $rates = $userratedata[$uid] ?? ['sprate' => 0, 'cprate' => 0, 'fbrate' => 0];
-            $engagement = round($rates['sprate'] * 0.45 + $rates['cprate'] * 0.35 + $rates['fbrate'] * 0.20, 1);
+            $rates = $userratedata[$uid] ?? ['sprate' => 0, 'cprate' => 0, 'tprate' => 0];
+            $engagement = round($rates['sprate'] * 0.45 + $rates['cprate'] * 0.35 + $rates['tprate'] * 0.20, 1);
             $scatterpoints[] = [
                 'x' => $engagement,
                 'y' => $grade,
@@ -8558,28 +8822,13 @@ class report extends \grade_report {
             array_merge(['courseid' => $this->courseid], $inparams3)
         );
 
-        // 4. BigBlueButton sessions (if module is installed). We count distinct
-        // BBB activity instances the teacher *touched* (created, joined, viewed
-        // the recording of) rather than only sessions they explicitly created
-        // — the `log = 'Create'` filter previously used here missed every
-        // session a teacher attended without being the one to start the room,
-        // which is common when sessions are pre-scheduled or co-taught.
-        $bbbdata = [];
-        $bbbinstalled = $DB->get_manager()->table_exists('bigbluebuttonbn_logs');
-        if ($bbbinstalled) {
-            [$insql4, $inparams4] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'bbb');
-            $bbbdata = $DB->get_records_sql(
-                "SELECT bl.userid,
-                        COUNT(DISTINCT bl.bigbluebuttonbnid) AS sessions,
-                        MAX(bl.timecreated) AS last_session
-                   FROM {bigbluebuttonbn_logs} bl
-                   JOIN {bigbluebuttonbn} bbn ON bbn.id = bl.bigbluebuttonbnid
-                  WHERE bbn.course = :courseid
-                    AND bl.userid $insql4
-               GROUP BY bl.userid",
-                array_merge(['courseid' => $this->courseid], $inparams4)
-            );
-        }
+        // 4. Live sessions (BigBlueButton): sittings the teacher attended, plus
+        // part credit for student-only sittings in rooms they are responsible
+        // for, and the share of their students reached. Recording views and
+        // activity edits do not count. See live_sessions::get_teacher().
+        $livesessions = live_sessions::for_course($this->courseid, $now);
+        $haslive = $livesessions->has_sessions();
+        $weights = self::get_coordinator_weights($this->courseid, $haslive, $livesessions->get_intensity());
 
         // 5. Grade monitoring: how often teachers view the gradebook.
         [$insql5, $inparams5] = $DB->get_in_or_equal($teacherids, SQL_PARAMS_NAMED, 'gvm');
@@ -8678,10 +8927,10 @@ class report extends \grade_report {
             $forumlastpost = $forum->last_post ?? 0;
             $forumpostspw = round($forumposts / $weeksenrolled, 1);
 
-            $bbb = $bbbdata[$uid] ?? null;
-            $bbbsessions = $bbb->sessions ?? 0;
-            $bbblast = $bbb->last_session ?? 0;
-            $bbbpw = round($bbbsessions / $weeksenrolled, 1);
+            $live = $haslive ? $livesessions->get_teacher((int)$uid) : null;
+            $bbbsessions = $live ? $live['facilitated'] : 0;
+            $bbblast = $live ? $live['last'] : 0;
+            $bbbpw = $live ? round($live['credited'] / $weeksenrolled, 1) : 0;
 
             $gradeview = $grademonitoring[$uid] ?? null;
             $gradeviews = $gradeview->cnt ?? 0;
@@ -8719,7 +8968,7 @@ class report extends \grade_report {
                 $gradingscore = 50; // No grading data — neutral.
             }
             $forumscore = min(100, round($forumpostspw / 3.0 * 100)); // 3 posts/week = 100%.
-            $bbbscore = $bbbinstalled ? min(100, round($bbbpw / 0.5 * 100)) : 50; // 0.5 sessions/week = 100%.
+            $bbbscore = $live ? live_sessions::score_teacher($live, $weeksenrolled) : null;
             $grademonitoringscore = min(100, round($gradeviewspw / 2.0 * 100)); // 2 views/week = 100%.
             $contentscore = $contentenabled
                 ? min(100, round($updatecount / max(1, $weeksenrolled) * 10)) // 10 updates/course = 100%.
@@ -8739,19 +8988,24 @@ class report extends \grade_report {
                 ? round($feedbackwithfb / $feedbacktotalgraded * 100)
                 : 0;
 
-            // Weighted composite: insights 12%, grading 15%, feedback 15%, forum 13%,
-            // BBB 8%, monitoring 10%, content 10%, messaging 9%, active 8%.
-            $composite = round(
-                $insightscore * 0.12 +
-                $gradingscore * 0.15 +
-                $feedbackscore * 0.15 +
-                $forumscore * 0.13 +
-                $bbbscore * 0.08 +
-                $grademonitoringscore * 0.10 +
-                $contentscore * 0.10 +
-                $messagescore * 0.09 +
-                $activescore * 0.08
-            );
+            // Weighted composite (see get_coordinator_weights()). The live
+            // dimension is absent when the course holds no live sessions.
+            $scores = [
+                'insight' => $insightscore,
+                'grading' => $gradingscore,
+                'feedback' => $feedbackscore,
+                'forum' => $forumscore,
+                'live' => $bbbscore ?? 0,
+                'monitoring' => $grademonitoringscore,
+                'content' => $contentscore,
+                'messaging' => $messagescore,
+                'active' => $activescore,
+            ];
+            $contributions = [];
+            foreach ($weights as $dim => $weight) {
+                $contributions[$dim] = round($scores[$dim] * $weight, 1);
+            }
+            $composite = (int)round(array_sum($contributions));
 
             $totalscore += $composite;
 
@@ -8794,9 +9048,13 @@ class report extends \grade_report {
                 'forumlastpost' => $forumlastpost ? userdate($forumlastpost, get_string('strftimedatetime')) : '-',
 
                 'bbbsessions' => $bbbsessions,
+                'bbbpeer' => $live ? $live['peer'] : 0,
                 'bbbpw' => $bbbpw,
+                'bbbreach' => $live ? $live['reach'] : 0,
+                'bbbminutes' => $live ? $live['minutes'] : 0,
                 'bbbscore' => $bbbscore,
-                'hasbbb' => $bbbinstalled,
+                'hasbbb' => $haslive,
+                'contributions' => $contributions,
 
                 'gradeviews' => $gradeviews,
                 'gradeviewspw' => $gradeviewspw,
@@ -8921,7 +9179,8 @@ class report extends \grade_report {
         return [
             'teachers' => $teacherresults,
             'hasteachers' => !empty($teacherresults),
-            'hasbbb' => $bbbinstalled,
+            'hasbbb' => $haslive,
+            'weights' => array_map(fn($w) => (int)round($w * 100), $weights),
             'hascontent' => $contentenabled,
             'hasfeedback' => $feedbackenabled,
             'summary' => [

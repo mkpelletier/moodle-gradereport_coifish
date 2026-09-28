@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.12.0] - 2026-09-28
+
+### Added
+- **Live-session (BigBlueButton) interaction feeds the CoI presence triad.** A new `live_sessions` analyser reads `mod_bigbluebuttonbn`'s own logs. With the BBB meeting-events analytics callback enabled, it uses each attendee's per-session summary (duration, talk time, chats, raised hands, poll votes); otherwise it falls back to join records. Each held session is classed as *facilitated* (a course teacher attended) or *peer* (students only, e.g. role-plays). The BBB moderator flag is not used, because role-play rooms often make every student a moderator. Group-mode rooms count only for their group, and peer sessions in an open room count only for students who use that room.
+  - **Social presence:** the BBB signal is now sessions attended out of those open to the student, credited more for taking a fair share of the conversation, with peer-only sessions weighted extra (`sp_bbb_peer_multiplier`, default 2×). The Community engagement widget shows live sessions and minutes speaking and blends them into its level. The Peer connection widget counts classmates met in small live sessions (≤ 8 students).
+  - **Adaptive BBB weight:** the BBB social-presence weight scales with the course's live-session intensity (about 4 weighted sessions per student = unchanged, clamped to 0.5×–3×; `sp_bbb_adaptive`, on by default).
+  - **Per-course social-presence weights:** course settings can override each `sp_weight_*` value and the adaptive toggle.
+  - **Teaching presence:** a student's teaching presence blends feedback review with attending facilitated live sessions (`tp_weight_live`, default 30%); students with no graded feedback yet are scored on live contact alone and can now be flagged. The teaching-presence card gains a "Live sessions facilitated" metric (sessions held and student reach), and the Feedback loop widget shows live sessions with the lecturer. The risk-quadrant engagement index uses the blended rate.
+- **Faculty scores use real live teaching.** In the coordinator teacher-engagement score, the live-session indicator is now 60% frequency (sessions the teacher attended, plus part credit, `faculty_bbb_peer_credit` (default 0.5), for student-only sessions in rooms they are responsible for: their group's room, else the activity they created) and 40% reach (share of their students who joined at least one of those sessions). Recording views and activity edits no longer count. Its weight scales with the course's live-session intensity (same adaptive setting as social presence; 8% at the reference, e.g. 19% in a role-play-heavy course), and it is dropped, with its weight shared across the other indicators, in courses that hold no live sessions. `live_sessions::get_teacher()` and `live_sessions::score_teacher()` expose the same measure to local_coifish's lecturer profile.
+- **Coordinator breakdown chart matches the composite.** The chart now plots each teacher's server-computed weighted contributions (it previously used its own hardcoded weights and omitted live sessions), and the methodology table shows the weights actually applied.
+- **Shared API for local_coifish.** `report::blend_live_social()` is the single social-presence blend used by the Community widget and local_coifish snapshots; `live_sessions::get_teacher()`, `score_teacher()` and `has_sessions_between()` supply live-teaching metrics to local_coifish's lecturer profile.
+- **Demo generator:** `cli/generate_demo.php` now adds a lecturer, a weekly facilitated BBB seminar, group role-play rooms (with meeting-events analytics, plus one join-only session) and enables the CoI widgets. The new `--ended` option makes the course finish yesterday so local_coifish snapshots it.
+
+### Changed
+- **Social signals without opportunity are left out.** In the cohort social-presence composite, forum participation is dropped (and its weight redistributed) for a student with no forum discussions visible to them, as BBB already was for a student with no live sessions open to them; the Community widget and local_coifish do the same via `report::blend_live_social()`. Previously a course without forums capped every student's social presence at about half.
+- `report::SOCIAL_METRIC_VERSION` is now 3. `get_social_weights()` and `get_social_weights_signature()` accept an optional course id; the signature appends `-adapt` when adaptive weighting is on.
+- Methodology texts no longer quote fixed 50/20/15/15 weights, which have been configurable since 2.10.0.
+
+### Fixed
+- **Recording views no longer count as live-session attendance.** The cohort BBB signal previously counted any BBB log row (including `Played` recordings and activity edits) and treated a recurring room as a single session.
+- **Peer connection no longer undercounts peers.** Peers replied to and peers who replied were combined with `max()` rather than a union.
+
 ## [2.11.1] - 2026-09-10
 
 ### Changed

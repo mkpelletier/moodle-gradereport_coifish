@@ -52,91 +52,32 @@ define(['core/chartjs-lazy'], function(ChartJS) {
                 return t.name;
             });
 
-            // Each component gets a weighted slice — show the weighted contribution, not the raw score.
-            var hasContent = chartData.length > 0 && chartData[0].content !== undefined;
-            var hasFeedback = chartData.length > 0 && chartData[0].feedback !== undefined;
-
-            var weights = {
-                insight: 0.12,
-                grading: 0.15,
-                feedback: 0.15,
-                forum: 0.13,
-                monitoring: 0.10,
-                content: 0.10,
-                messaging: 0.09,
-                active: 0.08
-            };
-
-            var datasets = [
-                {
-                    label: chartLabels.insights || 'Insights usage',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.insight * weights.insight);
-                    }),
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                },
-                {
-                    label: chartLabels.grading || 'Grading turnaround',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.grading * weights.grading);
-                    }),
-                    backgroundColor: 'rgba(75, 192, 192, 0.8)',
-                }
+            // Each teacher carries their weighted contribution per dimension
+            // (computed server-side with the composite's own weights), so the
+            // stacked bar adds up to the composite score.
+            var series = [
+                {key: 'insight', label: chartLabels.insights || 'Insights usage', colour: 'rgba(54, 162, 235, 0.8)'},
+                {key: 'grading', label: chartLabels.grading || 'Grading turnaround', colour: 'rgba(75, 192, 192, 0.8)'},
+                {key: 'feedback', label: chartLabels.feedback || 'Feedback quality', colour: 'rgba(0, 168, 120, 0.8)'},
+                {key: 'forum', label: chartLabels.forum || 'Forum activity', colour: 'rgba(153, 102, 255, 0.8)'},
+                {key: 'live', label: chartLabels.live || 'Live sessions', colour: 'rgba(23, 107, 135, 0.8)'},
+                {key: 'monitoring', label: chartLabels.monitoring || 'Grade monitoring', colour: 'rgba(255, 206, 86, 0.8)'},
+                {key: 'content', label: chartLabels.content || 'Content updates', colour: 'rgba(255, 159, 64, 0.8)'},
+                {key: 'messaging', label: chartLabels.messaging || 'Messaging', colour: 'rgba(255, 99, 132, 0.8)'},
+                {key: 'active', label: chartLabels.active || 'Active days', colour: 'rgba(201, 203, 207, 0.8)'}
             ];
-
-            if (hasFeedback) {
-                datasets.push({
-                    label: chartLabels.feedback || 'Feedback quality',
+            var present = chartData[0].contrib || {};
+            var datasets = series.filter(function(s) {
+                return present[s.key] !== undefined;
+            }).map(function(s) {
+                return {
+                    label: s.label,
                     data: chartData.map(function(t) {
-                        return Math.round((t.feedback || 0) * weights.feedback);
+                        return (t.contrib || {})[s.key] || 0;
                     }),
-                    backgroundColor: 'rgba(0, 168, 120, 0.8)',
-                });
-            }
-
-            datasets.push(
-                {
-                    label: chartLabels.forum || 'Forum activity',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.forum * weights.forum);
-                    }),
-                    backgroundColor: 'rgba(153, 102, 255, 0.8)',
-                },
-                {
-                    label: chartLabels.monitoring || 'Grade monitoring',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.monitoring * weights.monitoring);
-                    }),
-                    backgroundColor: 'rgba(255, 206, 86, 0.8)',
-                }
-            );
-
-            if (hasContent) {
-                datasets.push({
-                    label: chartLabels.content || 'Content updates',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.content * weights.content);
-                    }),
-                    backgroundColor: 'rgba(255, 159, 64, 0.8)',
-                });
-            }
-
-            datasets.push(
-                {
-                    label: chartLabels.messaging || 'Messaging',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.messaging * weights.messaging);
-                    }),
-                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
-                },
-                {
-                    label: chartLabels.active || 'Active days',
-                    data: chartData.map(function(t) {
-                        return Math.round(t.active * weights.active);
-                    }),
-                    backgroundColor: 'rgba(201, 203, 207, 0.8)',
-                }
-            );
+                    backgroundColor: s.colour,
+                };
+            });
 
             // Set canvas height based on number of teachers.
             var barHeight = 40;

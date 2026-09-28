@@ -59,6 +59,8 @@ class coordinator_report implements renderable, templatable {
 
         $data->hasdata = $coorddata['hasteachers'];
         $data->hasbbb = $coorddata['hasbbb'] ?? false;
+        // Weights actually applied (%), so the methodology table matches the composite.
+        $data->weights = $coorddata['weights'] ?? report::COORDINATOR_WEIGHTS;
         $data->hascontent = $coorddata['hascontent'] ?? true;
         $data->hasfeedback = $coorddata['hasfeedback'] ?? true;
         // Live feedback-quality weights, so the methodology card matches config.
@@ -70,25 +72,22 @@ class coordinator_report implements renderable, templatable {
 
         // Prepare chart data for the engagement breakdown bar chart.
         if ($data->hasdata) {
+            // Each teacher's weighted contribution per dimension, computed with
+            // the same weights as the composite so the bars add up to it.
             $chartdata = [];
             foreach ($coorddata['teachers'] as $t) {
-                $entry = [
+                $contrib = $t['contributions'];
+                if (!$data->hasfeedback) {
+                    unset($contrib['feedback']);
+                }
+                if (!$data->hascontent) {
+                    unset($contrib['content']);
+                }
+                $chartdata[] = [
                     'name' => $t['fullname'],
                     'composite' => $t['composite'],
-                    'insight' => $t['insightscore'],
-                    'grading' => $t['gradingscore'],
-                    'forum' => $t['forumscore'],
-                    'monitoring' => $t['grademonitoringscore'],
-                    'messaging' => $t['messagescore'],
-                    'active' => $t['activescore'],
+                    'contrib' => $contrib,
                 ];
-                if ($data->hasfeedback) {
-                    $entry['feedback'] = $t['feedbackscore'];
-                }
-                if ($data->hascontent) {
-                    $entry['content'] = $t['contentscore'];
-                }
-                $chartdata[] = $entry;
             }
             $data->chartjson = json_encode($chartdata);
             $data->labelsjson = json_encode([
@@ -100,6 +99,7 @@ class coordinator_report implements renderable, templatable {
                 'content' => get_string('coord_chart_content', 'gradereport_coifish'),
                 'messaging' => get_string('coord_chart_messaging', 'gradereport_coifish'),
                 'active' => get_string('coord_chart_active', 'gradereport_coifish'),
+                'live' => get_string('coord_chart_live', 'gradereport_coifish'),
             ]);
         }
 

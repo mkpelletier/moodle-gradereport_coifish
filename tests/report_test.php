@@ -1049,4 +1049,201 @@ final class report_test extends \advanced_testcase {
         $rows2 = report::get_assignment_feedback_breakdown($course->id, $teacher->id);
         $this->assertGreaterThan(0, $rows2[0]['depth']);
     }
+
+    /**
+     * Social weights: defaults, adaptive BBB scaling with clamping, and renormalisation.
+     */
+    public function test_social_weights_adaptive(): void {
+        $this->resetAfterTest();
+        $w = report::get_social_weights();
+        $this->assertEqualsWithDelta(0.20, $w['bbb'], 0.0001);
+
+        // 4 weighted sessions per student is the reference: unchanged.
+        $w = report::get_social_weights(null, 4.0);
+        $this->assertEqualsWithDelta(0.20, $w['bbb'], 0.0001);
+
+        // Role-play-heavy course: scale capped at 3x -> 60 / 140.
+        $w = report::get_social_weights(null, 40.0);
+        $this->assertEqualsWithDelta(60 / 140, $w['bbb'], 0.0001);
+        $this->assertEqualsWithDelta(1.0, array_sum($w), 0.0001);
+
+        // Single optional webinar: floored at 0.5x -> 10 / 90.
+        $w = report::get_social_weights(null, 0.25);
+        $this->assertEqualsWithDelta(10 / 90, $w['bbb'], 0.0001);
+
+        // Adaptive switched off at site level.
+        set_config('sp_bbb_adaptive', 0, 'gradereport_coifish');
+        $w = report::get_social_weights(null, 40.0);
+        $this->assertEqualsWithDelta(0.20, $w['bbb'], 0.0001);
+    }
+
+    /**
+     * Course overrides take precedence over site weights and the site adaptive setting.
+     */
+    public function test_social_weights_course_override(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        set_config('course_' . $course->id, json_encode([
+            'sp_weight_bbb' => '40',
+            'sp_weight_forum' => '',
+            'sp_bbb_adaptive' => '0',
+        ]), 'gradereport_coifish');
+
+        $w = report::get_social_weights((int)$course->id, 40.0);
+        $this->assertEqualsWithDelta(40 / 120, $w['bbb'], 0.0001);
+        $this->assertEqualsWithDelta(50 / 120, $w['forum'], 0.0001);
+
+        $this->assertSame('v3:forum42-bbb33-collab13-msg13', report::get_social_weights_signature((int)$course->id));
+        $this->assertSame('v3:forum50-bbb20-collab15-msg15-adapt', report::get_social_weights_signature());
+    }
+
+    /**
+     * Teaching presence blends feedback review with facilitated live contact.
+     */
+    public function test_blend_teaching_rate(): void {
+        $this->resetAfterTest();
+        $nolive = ['facilitatedavailable' => 0, 'facilitatedrate' => 0];
+        $live = ['facilitatedavailable' => 4, 'facilitatedrate' => 100];
+
+        // No facilitated sessions: feedback rate only.
+        $this->assertSame(50, report::blend_teaching_rate(2, 50, $nolive));
+        // No graded feedback yet: live contact only.
+        $this->assertSame(100, report::blend_teaching_rate(0, 0, $live));
+        // Both: default 30% live.
+        $this->assertSame(65, report::blend_teaching_rate(2, 50, $live));
+
+        set_config('tp_weight_live', 50, 'gradereport_coifish');
+        $this->assertSame(75, report::blend_teaching_rate(2, 50, $live));
+    }
+
+    /**
+     * Live sessions flow through the cohort teaching-presence card and the
+     * student Community, Peer connection and Feedback loop widgets.
+     */
+    public function test_live_sessions_in_cohort_and_widgets(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        live_sessions::reset_cache();
+        foreach (['coi_community', 'coi_peerconnection', 'coi_feedbackloop'] as $w) {
+            set_config('widget_' . $w, '1', 'gradereport_coifish');
+        }
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course(['startdate' => time() - 60 * DAYSECS]);
+        $teacher = $generator->create_and_enrol($course, 'editingteacher');
+        $s1 = $generator->create_and_enrol($course, 'student');
+        $s2 = $generator->create_and_enrol($course, 'student');
+        $bbb = $generator->create_module('bigbluebuttonbn', ['course' => $course->id]);
+        $meetingid = $bbb->meetingid . '-' . $course->id . '-' . $bbb->id . '[0]';
+        $t = time() - 5 * DAYSECS;
+        $sittings = [
+            'rec-fac' => [$teacher->id => 900, $s1->id => 300, $s2->id => 60],
+            'rec-peer' => [$s1->id => 600, $s2->id => 600],
+        ];
+        foreach ($sittings as $recordid => $attendees) {
+            foreach ($attendees as $userid => $talk) {
+                $DB->insert_record('bigbluebuttonbn_logs', [
+                    'courseid' => $course->id, 'bigbluebuttonbnid' => $bbb->id, 'userid' => $userid,
+                    'timecreated' => $t, 'meetingid' => $meetingid, 'log' => 'Summary',
+                    'meta' => json_encode(['recordid' => $recordid, 'data' => [
+                        'duration' => 2400, 'engagement' => ['talk_time' => $talk, 'talks' => 5, 'chats' => 1],
+                    ]]),
+                ]);
+            }
+            $t += DAYSECS;
+        }
+
+        $this->setUser($teacher);
+        $cohort = json_encode($this->create_report($course, 0)->get_cohort_insights_data());
+        $this->assertStringContainsString(get_string('cohort_tp_live', 'gradereport_coifish'), $cohort);
+
+        $widgets = $this->create_report($course, $s1->id)->get_coi_data(true)['widgets'];
+        $bytype = array_column($widgets, null, 'type');
+        $labels = function (string $type) use ($bytype): array {
+            return array_column($bytype[$type]['breakdown'], 'count', 'label');
+        };
+        $community = $labels('coi_community');
+        $this->assertSame('2 / 2', $community[get_string('widget_live_sessions', 'gradereport_coifish')]);
+        // No forums in the course: full live participation stands alone.
+        $this->assertSame('exemplary', $bytype['coi_community']['level']['class']);
+        $peer = $labels('coi_peerconnection');
+        $this->assertSame(1, $peer[get_string('widget_live_peers', 'gradereport_coifish')]);
+        $this->assertGreaterThan(0, $bytype['coi_peerconnection']['level']['level']);
+        $feedback = $labels('coi_feedbackloop');
+        $this->assertSame('1 / 1', $feedback[get_string('widget_live_facilitated', 'gradereport_coifish')]);
+        // No graded feedback yet: teaching presence comes from live contact alone.
+        $this->assertSame(100, $bytype['coi_feedbackloop']['percent']);
+    }
+
+    /**
+     * Coordinator weights: live dropped and redistributed without live sessions,
+     * scaled by intensity with them.
+     */
+    public function test_coordinator_weights(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $cid = (int)$course->id;
+
+        $w = report::get_coordinator_weights($cid, false, 0);
+        $this->assertArrayNotHasKey('live', $w);
+        $this->assertEqualsWithDelta(1.0, array_sum($w), 0.0001);
+        $this->assertEqualsWithDelta(15 / 92, $w['grading'], 0.0001);
+
+        $w = report::get_coordinator_weights($cid, true, 4.0);
+        $this->assertEqualsWithDelta(0.08, $w['live'], 0.0001);
+
+        $w = report::get_coordinator_weights($cid, true, 12.0);
+        $this->assertEqualsWithDelta(24 / 116, $w['live'], 0.0001);
+
+        set_config('sp_bbb_adaptive', 0, 'gradereport_coifish');
+        $w = report::get_coordinator_weights($cid, true, 12.0);
+        $this->assertEqualsWithDelta(0.08, $w['live'], 0.0001);
+    }
+
+    /**
+     * The coordinator view scores live teaching from real sittings, and each
+     * teacher's contributions add up to their composite.
+     */
+    public function test_coordinator_live_dimension(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        live_sessions::reset_cache();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course(['startdate' => time() - 28 * DAYSECS]);
+        $teacher = $generator->create_and_enrol($course, 'editingteacher');
+        $other = $generator->create_and_enrol($course, 'editingteacher');
+        $s1 = $generator->create_and_enrol($course, 'student');
+        $s2 = $generator->create_and_enrol($course, 'student');
+        $bbb = $generator->create_module('bigbluebuttonbn', ['course' => $course->id]);
+        $meetingid = $bbb->meetingid . '-' . $course->id . '-' . $bbb->id . '[0]';
+        foreach ([1, 2] as $week) {
+            foreach ([$teacher->id, $s1->id] as $userid) {
+                $DB->insert_record('bigbluebuttonbn_logs', [
+                    'courseid' => $course->id, 'bigbluebuttonbnid' => $bbb->id, 'userid' => $userid,
+                    'timecreated' => time() - $week * WEEKSECS, 'meetingid' => $meetingid, 'log' => 'Summary',
+                    'meta' => json_encode(['recordid' => 'rec-' . $week, 'data' => ['duration' => 3600]]),
+                ]);
+            }
+        }
+        // Viewing a recording is not a session.
+        $DB->insert_record('bigbluebuttonbn_logs', [
+            'courseid' => $course->id, 'bigbluebuttonbnid' => $bbb->id, 'userid' => $other->id,
+            'timecreated' => time() - DAYSECS, 'meetingid' => $meetingid, 'log' => 'Played', 'meta' => '{}',
+        ]);
+
+        $this->setUser($teacher);
+        $data = $this->create_report($course, 0)->get_coordinator_teacher_data();
+        $this->assertTrue($data['hasbbb']);
+        $this->assertArrayHasKey('live', $data['weights']);
+        $rows = array_column($data['teachers'], null, 'userid');
+
+        $this->assertSame(2, $rows[$teacher->id]['bbbsessions']);
+        $this->assertSame(50, $rows[$teacher->id]['bbbreach']);
+        // 2 sessions over 4 weeks = 0.5/week -> 100 frequency; reach 50 -> 80.
+        $this->assertSame(80, $rows[$teacher->id]['bbbscore']);
+        $this->assertSame(0, $rows[$other->id]['bbbsessions']);
+        foreach ($rows as $row) {
+            $this->assertEqualsWithDelta($row['composite'], array_sum($row['contributions']), 0.6);
+        }
+    }
 }

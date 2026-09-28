@@ -16,6 +16,8 @@
     * dashboardoptions (array) - Pulse enabled override options (use site default / on / off).
     * studentdashboardinterval (int|string) - Pulse frequency override, or empty to use the site default.
     * sitedashboardinterval (int) - The site default pulse frequency (days).
+    * spweights (array) - Social-presence weight overrides (key, label, value, placeholder).
+    * adaptiveoptions (array) - Adaptive live-session weighting override options.
     * haswidgets (bool) - Whether site-enabled widgets exist.
     * widgets (array) - Widget override checkboxes.
 
@@ -30,6 +32,8 @@
         "showlongitudinal": false,
         "longitudinaloptions": [],
         "gamificationenabled": false,
+        "spweights": [{"key": "bbb", "label": "BigBlueButton weight", "value": "40", "placeholder": 20}],
+        "adaptiveoptions": [{"value": "", "label": "Use site default", "selected": true}],
         "haswidgets": false,
         "widgets": []
     }
@@ -156,6 +160,45 @@
                    value="{{studentdashboardinterval}}" placeholder="{{sitedashboardinterval}}">
             <small class="form-text text-muted">
                 {{#str}}coursesettings_student_dashboard_interval_desc, gradereport_coifish, {{sitedashboardinterval}}{{/str}}
+            </small>
+        </div>
+    </div>
+
+    {{! Social-presence weights (blank = use the site weight) }}
+    <div class="form-group row mb-3">
+        <label class="col-md-12 mb-2"><strong>
+            {{#str}}coursesettings_social_weights, gradereport_coifish{{/str}}
+        </strong></label>
+        <div class="col-md-9">
+            <small class="form-text text-muted mb-2 d-block">
+                {{#str}}coursesettings_social_weights_desc, gradereport_coifish{{/str}}
+            </small>
+            {{#spweights}}
+            <div class="row mb-1 align-items-center">
+                <label class="col-md-5 col-form-label" for="sp_weight_{{key}}">{{label}}</label>
+                <div class="col-md-3">
+                    <input type="number" class="form-control" id="sp_weight_{{key}}"
+                           name="sp_weight_{{key}}" min="0" max="100" step="5"
+                           value="{{value}}" placeholder="{{placeholder}}">
+                </div>
+            </div>
+            {{/spweights}}
+        </div>
+    </div>
+
+    {{! Adaptive live-session weighting override (use site default / on / off) }}
+    <div class="form-group row mb-3">
+        <label class="col-md-3 col-form-label" for="sp_bbb_adaptive"><strong>
+            {{#str}}coursesettings_sp_bbb_adaptive, gradereport_coifish{{/str}}
+        </strong></label>
+        <div class="col-md-6">
+            <select class="form-select" id="sp_bbb_adaptive" name="sp_bbb_adaptive">
+                {{#adaptiveoptions}}
+                    <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
+                {{/adaptiveoptions}}
+            </select>
+            <small class="form-text text-muted">
+                {{#str}}coursesettings_sp_bbb_adaptive_desc, gradereport_coifish{{/str}}
             </small>
         </div>
     </div>

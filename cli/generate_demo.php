@@ -20,7 +20,10 @@
  * Creates a course with 3 grade categories, 10 assignments, 20 students,
  * and realistic grade distributions to showcase the dashboard.
  *
- * Usage: php generate_demo.php
+ * Usage: php generate_demo.php [--ended]
+ *
+ * With --ended the course ran for the past 12 weeks and finished yesterday, so
+ * local_coifish's build_profiles task snapshots it into the longitudinal record.
  *
  * @package    gradereport_coifish
  * @copyright  2026 South African Theological Seminary (ict@sats.ac.za)
@@ -42,6 +45,12 @@ require_once($CFG->libdir . '/testing/generator/lib.php');
 require_once($CFG->libdir . '/testing/generator/data_generator.php');
 $generator = new \testing_data_generator();
 
+[$options] = cli_get_params(['ended' => false, 'help' => false], ['h' => 'help']);
+if ($options['help']) {
+    cli_writeln("Generate a CoIFish demo course.\n\nOptions:\n  --ended   Make the course finish yesterday (12 weeks long).");
+    exit(0);
+}
+
 cli_heading('Grade Tracker Demo Data Generator');
 
 // 1. Create the course.
@@ -52,8 +61,10 @@ $course = create_course((object)[
     'format' => 'topics',
     'numsections' => 4,
     'groupmode' => SEPARATEGROUPS,
+    'startdate' => time() - 12 * WEEKSECS,
+    'enddate' => $options['ended'] ? time() - DAYSECS : 0,
 ]);
-cli_writeln("Created course: {$course->fullname} (ID: {$course->id})");
+cli_writeln("Created course: {$course->fullname} (ID: {$course->id})" . ($options['ended'] ? ' [ended]' : ''));
 
 // 2. Create groups.
 $group1id = groups_create_group((object)[
@@ -395,6 +406,112 @@ if ($hiddenitem) {
     cli_writeln("Hidden grade item: Quiz 3: Applications");
 }
 
+// 9b. Live sessions (BigBlueButton): a lecturer-led weekly seminar and
+// student-only role-play rooms per group. Logs mimic what mod_bigbluebuttonbn
+// writes when the meeting-events analytics callback is enabled: one Callback
+// row per sitting and one Summary row per attendee.
+$lecturer = $generator->create_user([
+    'firstname' => 'Demo',
+    'lastname' => 'Lecturer',
+    'email' => 'demo.lecturer@demo.example.com',
+]);
+$studentplugin->enrol_user($manualinstance, $lecturer->id, $DB->get_field('role', 'id', ['shortname' => 'editingteacher']));
+
+$seminar = $generator->create_module('bigbluebuttonbn', [
+    'course' => $course->id,
+    'name' => 'Weekly seminar',
+    'groupmode' => NOGROUPS,
+]);
+$roleplay = $generator->create_module('bigbluebuttonbn', [
+    'course' => $course->id,
+    'name' => 'Role-play rooms',
+    'groupmode' => SEPARATEGROUPS,
+]);
+
+/**
+ * Write the BBB logs for one held sitting.
+ *
+ * @param stdClass $bbb BBB activity.
+ * @param int $courseid Course id.
+ * @param int $groupid Group room (0 = none).
+ * @param int $time When the sitting ended.
+ * @param array $attendees Map of userid => [talk_time seconds, chats].
+ * @param bool $withanalytics False to write Join clicks only (callback missing).
+ */
+function create_demo_sitting($bbb, $courseid, $groupid, $time, array $attendees, $withanalytics = true) {
+    global $DB;
+    $meetingid = $bbb->meetingid . '-' . $courseid . '-' . $bbb->id . '[' . $groupid . ']';
+    $recordid = sha1($meetingid . $time) . '-' . $time;
+    $base = ['courseid' => $courseid, 'bigbluebuttonbnid' => $bbb->id, 'meetingid' => $meetingid];
+    foreach (array_keys($attendees) as $userid) {
+        $DB->insert_record('bigbluebuttonbn_logs', $base + [
+            'userid' => $userid, 'timecreated' => $time - 3600, 'log' => 'Join', 'meta' => '{"origin":0}',
+        ]);
+    }
+    if (!$withanalytics) {
+        return;
+    }
+    $DB->insert_record('bigbluebuttonbn_logs', $base + [
+        'userid' => null, 'timecreated' => $time, 'log' => 'Callback',
+        'meta' => json_encode(['internalmeetingid' => $recordid, 'callback' => 'meeting_events', 'meetingid' => $meetingid]),
+    ]);
+    foreach ($attendees as $userid => [$talk, $chats]) {
+        $DB->insert_record('bigbluebuttonbn_logs', $base + [
+            'userid' => $userid, 'timecreated' => $time, 'log' => 'Summary',
+            'meta' => json_encode(['recordid' => $recordid, 'data' => [
+                'ext_user_id' => $userid,
+                'duration' => mt_rand(2400, 3600),
+                'engagement' => [
+                    'chats' => $chats, 'talks' => (int)round($talk / 30), 'raisehand' => mt_rand(0, 2),
+                    'emojis' => mt_rand(0, 3), 'poll_votes' => mt_rand(0, 2), 'talk_time' => $talk,
+                ],
+            ]]),
+        ]);
+    }
+}
+
+// Attendance and voice follow each student's profile: stronger students join
+// more often and speak more.
+$sittings = 0;
+foreach ([5, 4, 3, 2] as $weeksago) {
+    $attendees = [$lecturer->id => [mt_rand(1500, 2100), 0]];
+    foreach ($students as $i => $student) {
+        if (mt_rand(0, 100) < $profiles[$i]['base']) {
+            $attendees[$student->id] = [(int)round(mt_rand(0, 240) * $profiles[$i]['base'] / 100), mt_rand(0, 4)];
+        }
+    }
+    create_demo_sitting($seminar, $course->id, 0, time() - $weeksago * WEEKSECS, $attendees);
+    $sittings++;
+}
+// One earlier seminar from before the analytics callback was enabled.
+$attendees = [$lecturer->id => [0, 0]];
+foreach (array_slice($students, 0, 12) as $student) {
+    $attendees[$student->id] = [0, 0];
+}
+create_demo_sitting($seminar, $course->id, 0, time() - 6 * WEEKSECS, $attendees, false);
+$sittings++;
+
+// Student-only role-plays: three per group, five to seven students each.
+$groupmembers = [
+    $group1id => array_slice($students, 0, 10, true),
+    $group2id => array_slice($students, 10, 10, true),
+];
+foreach ($groupmembers as $gid => $members) {
+    foreach ([4, 3, 1] as $weeksago) {
+        $attendees = [];
+        foreach ($members as $i => $student) {
+            if (count($attendees) < 7 && mt_rand(0, 100) < $profiles[$i]['base'] - 10) {
+                $attendees[$student->id] = [(int)round(mt_rand(60, 600) * $profiles[$i]['base'] / 100), mt_rand(0, 3)];
+            }
+        }
+        if (count($attendees) >= 2) {
+            create_demo_sitting($roleplay, $course->id, $gid, time() - $weeksago * WEEKSECS + DAYSECS, $attendees);
+            $sittings++;
+        }
+    }
+}
+cli_writeln("\nCreated {$sittings} live sessions (weekly seminar with Demo Lecturer, group role-plays)");
+
 // 10. Configure plugin settings.
 // Set thresholds.
 set_config('threshold_pass', '50', 'gradereport_coifish');
@@ -408,6 +525,9 @@ set_config('widget_improvement', '1', 'gradereport_coifish');
 set_config('widget_trend', '1', 'gradereport_coifish');
 set_config('widget_streak', '1', 'gradereport_coifish');
 set_config('widget_milestones', '1', 'gradereport_coifish');
+set_config('widget_coi_community', '1', 'gradereport_coifish');
+set_config('widget_coi_peerconnection', '1', 'gradereport_coifish');
+set_config('widget_coi_feedbackloop', '1', 'gradereport_coifish');
 set_config('leaderboard_min_enrolment', '10', 'gradereport_coifish');
 
 // Enable gamification for this course.
@@ -420,6 +540,9 @@ $coursesettings = [
         'trend' => true,
         'streak' => true,
         'milestones' => true,
+        'coi_community' => true,
+        'coi_peerconnection' => true,
+        'coi_feedbackloop' => true,
     ],
 ];
 set_config('course_' . $course->id, json_encode($coursesettings), 'gradereport_coifish');
@@ -438,5 +561,6 @@ cli_writeln("Demo course ready!");
 cli_writeln("Course ID: {$course->id}");
 cli_writeln("Students:  20 (10 in Group A, 10 in Group B)");
 cli_writeln("Graded:    8 of 10 assignments (2 future/ungraded)");
+cli_writeln("Live:      {$sittings} BigBlueButton sessions (seminar + group role-plays)");
 cli_writeln("URL:       {$url->out(false)}");
 cli_writeln(str_repeat('=', 60));

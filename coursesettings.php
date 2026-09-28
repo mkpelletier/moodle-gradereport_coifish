@@ -74,6 +74,15 @@ if (data_submitted() && confirm_sesskey()) {
     $interval = optional_param('student_dashboard_interval_days', 0, PARAM_INT);
     $newsettings['student_dashboard_interval_days'] = ($interval > 0) ? min(120, max(1, $interval)) : '';
 
+    // Social-presence weight overrides (blank = use the site weight) and the
+    // adaptive live-session tri-state ('' = site default, '1' = on, '0' = off).
+    foreach (array_keys(\gradereport_coifish\report::SOCIAL_WEIGHT_DEFAULTS) as $sig) {
+        $weight = trim(optional_param('sp_weight_' . $sig, '', PARAM_RAW_TRIMMED));
+        $newsettings['sp_weight_' . $sig] = is_numeric($weight) ? (string)min(100, max(0, (int)$weight)) : '';
+    }
+    $adaptive = optional_param('sp_bbb_adaptive', '', PARAM_ALPHANUMEXT);
+    $newsettings['sp_bbb_adaptive'] = in_array($adaptive, ['0', '1'], true) ? $adaptive : '';
+
     // Widget overrides — only for site-enabled widgets.
     $newsettings['widgets'] = [];
     foreach (array_keys($sitewidgets) as $key) {

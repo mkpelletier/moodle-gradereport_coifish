@@ -10,7 +10,8 @@
     Context variables required for this template:
     * hasdata (bool) - Whether teacher engagement data is available.
     * coursename (string) - The course name.
-    * hasbbb (bool) - Whether BigBlueButton is installed.
+    * hasbbb (bool) - Whether the course has held live (BigBlueButton) sessions.
+    * weights (object) - Composite weights applied (%), keyed by dimension.
     * teachers (array) - Array of teacher engagement data.
     * summary (object) - Summary statistics.
     * recommendations (array) - Prescriptive recommendations.
@@ -22,6 +23,7 @@
         "hasdata": true,
         "coursename": "Introduction to Theology",
         "hasbbb": false,
+        "weights": {"insight": 13, "grading": 16, "feedback": 16, "forum": 14, "monitoring": 11, "content": 11, "messaging": 10, "active": 9},
         "teachers": [],
         "summary": {"teachercount": 2, "avgscore": 55},
         "recommendations": [],
@@ -211,8 +213,8 @@
                                 </td>
                                 {{#hasbbb}}
                                 <td class="text-center">
-                                    <span title="{{bbbsessions}} {{#str}}coord_sessions_total, gradereport_coifish{{/str}}">
-                                        {{bbbsessions}}
+                                    <span title="{{#str}}coord_live_tip, gradereport_coifish, { "facilitated": {{bbbsessions}}, "peer": {{bbbpeer}}, "minutes": {{bbbminutes}}, "reach": {{bbbreach}} } {{/str}}">
+                                        {{bbbsessions}}<small class="text-muted"> · {{bbbreach}}%</small>
                                     </span>
                                 </td>
                                 {{/hasbbb}}
@@ -440,51 +442,53 @@
                             <tbody>
                                 <tr>
                                     <td>{{#str}}coord_method_grading, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">15%</td>
+                                    <td class="text-center">{{weights.grading}}%</td>
                                     <td>{{#str}}coord_method_grading_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                                 {{#hasfeedback}}
                                 <tr>
                                     <td>{{#str}}coord_method_feedback, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">15%</td>
+                                    <td class="text-center">{{weights.feedback}}%</td>
                                     <td>{{#str}}coord_method_feedback_bench, gradereport_coifish{{/str}}<br><em class="text-muted">{{#str}}coord_method_feedback_weights_now, gradereport_coifish{{/str}}: {{feedbackweightsummary}}</em></td>
                                 </tr>
                                 {{/hasfeedback}}
                                 <tr>
                                     <td>{{#str}}coord_method_insights, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">12%</td>
+                                    <td class="text-center">{{weights.insight}}%</td>
                                     <td>{{#str}}coord_method_insights_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                                 <tr>
                                     <td>{{#str}}coord_method_forum, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">13%</td>
+                                    <td class="text-center">{{weights.forum}}%</td>
                                     <td>{{#str}}coord_method_forum_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
+                                {{#hasbbb}}
                                 <tr>
                                     <td>{{#str}}coord_method_bbb, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">8%</td>
+                                    <td class="text-center">{{weights.live}}%</td>
                                     <td>{{#str}}coord_method_bbb_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
+                                {{/hasbbb}}
                                 <tr>
                                     <td>{{#str}}coord_method_monitoring, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">10%</td>
+                                    <td class="text-center">{{weights.monitoring}}%</td>
                                     <td>{{#str}}coord_method_monitoring_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                                 {{#hascontent}}
                                 <tr>
                                     <td>{{#str}}coord_method_content, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">10%</td>
+                                    <td class="text-center">{{weights.content}}%</td>
                                     <td>{{#str}}coord_method_content_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                                 {{/hascontent}}
                                 <tr>
                                     <td>{{#str}}coord_method_messaging, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">9%</td>
+                                    <td class="text-center">{{weights.messaging}}%</td>
                                     <td>{{#str}}coord_method_messaging_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                                 <tr>
                                     <td>{{#str}}coord_method_active, gradereport_coifish{{/str}}</td>
-                                    <td class="text-center">8%</td>
+                                    <td class="text-center">{{weights.active}}%</td>
                                     <td>{{#str}}coord_method_active_bench, gradereport_coifish{{/str}}</td>
                                 </tr>
                             </tbody>
