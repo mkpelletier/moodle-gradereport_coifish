@@ -8,7 +8,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:${{ matrix.pgsql }}
         env:
           POSTGRES_USER: 'postgres'
           POSTGRES_HOST_AUTH_METHOD: 'trust'
@@ -17,7 +17,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
 
       mariadb:
-        image: mariadb:10.11
+        image: mariadb:${{ matrix.mariadb }}
         env:
           MYSQL_USER: 'root'
           MYSQL_ALLOW_EMPTY_PASSWORD: "true"
@@ -25,7 +25,7 @@ jobs:
           MYSQL_COLLATION_SERVER: "utf8mb4_unicode_ci"
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval 10s --health-timeout 5s --health-retries 3
+        options: --health-cmd="mariadb-admin ping" --health-interval 10s --health-timeout 5s --health-retries 3
 
     strategy:
       fail-fast: false
@@ -33,6 +33,21 @@ jobs:
         php: ['8.2', '8.3']
         moodle-branch: ['MOODLE_500_STABLE']
         database: [pgsql, mariadb]
+        pgsql: ['16']
+        mariadb: ['10.11']
+        include:
+          # Moodle 5.3 has no stable branch yet, so it is tested from main. Switch to
+          # MOODLE_503_STABLE once it exists. It needs PHP 8.3, PostgreSQL 17 and MariaDB 11.4.
+          - php: '8.3'
+            moodle-branch: 'main'
+            database: pgsql
+            pgsql: '17'
+            mariadb: '11.4'
+          - php: '8.3'
+            moodle-branch: 'main'
+            database: mariadb
+            pgsql: '17'
+            mariadb: '11.4'
 
     steps:
       - name: Check out repository code
