@@ -57,6 +57,9 @@ class report extends \grade_report {
     /** @var bool Whether the current user can view hidden grade items. */
     protected bool $canviewhidden = false;
 
+    /** @var array|null Totals recalculated without the user's hidden grades (grade_grade::get_hiding_affected()). */
+    protected ?array $hidingaffected = null;
+
     /** @var \course_modinfo|null Cached course module info for URL/availability lookups. */
     protected ?\course_modinfo $modinfo = null;
 
@@ -1456,6 +1459,87 @@ class report extends \grade_report {
     }
 
     /**
+     * Whether a raw `hidden` column value (grade item or grade) currently hides the grade.
+     *
+     * @param mixed $hidden 0 = visible, 1 = hidden, any other value = hidden until that timestamp.
+     * @return bool
+     */
+    protected static function is_hidden_value($hidden): bool {
+        $hidden = (int)$hidden;
+        return $hidden === 1 || ($hidden !== 0 && $hidden > time());
+    }
+
+    /**
+     * Whether the user's grade for an item is hidden from the current viewer.
+     *
+     * A grade is hidden when the grade item is hidden for the whole class or when
+     * this user's individual grade is hidden in the gradebook (including "hidden until").
+     *
+     * @param \grade_item $item The grade item.
+     * @return bool
+     */
+    protected function is_hidden_for_user(\grade_item $item): bool {
+        if ($this->canviewhidden) {
+            return false;
+        }
+        $gradegrade = $this->get_user_grade($item->id);
+        $gradegrade->grade_item = $item;
+        return $gradegrade->is_hidden();
+    }
+
+    /**
+     * Get the user's final grade for a total (category or course) item, leaving out hidden grades.
+     *
+     * Hidden grades are treated as not yet posted, so a total that aggregates one is
+     * recalculated without it — otherwise the hidden mark could be worked out from the total.
+     *
+     * @param \grade_item $item The category or course total item.
+     * @return float|null The final grade, or null if there is none to show.
+     */
+    protected function get_visible_finalgrade(\grade_item $item): ?float {
+        $gradegrade = $this->get_user_grade($item->id);
+        $finalgrade = ($gradegrade->finalgrade !== null) ? (float)$gradegrade->finalgrade : null;
+        if ($this->canviewhidden) {
+            return $finalgrade;
+        }
+
+        $affected = $this->get_hiding_affected();
+        foreach (['altered', 'unknowngrades'] as $key) {
+            if (array_key_exists($item->id, $affected[$key])) {
+                $value = $affected[$key][$item->id];
+                return ($value !== null) ? (float)$value : null;
+            }
+        }
+        return $finalgrade;
+    }
+
+    /**
+     * Work out which of the user's totals are affected by hidden grades.
+     *
+     * @return array The grade_grade::get_hiding_affected() result for this user and course.
+     */
+    protected function get_hiding_affected(): array {
+        if ($this->hidingaffected !== null) {
+            return $this->hidingaffected;
+        }
+        $this->hidingaffected = ['altered' => [], 'unknowngrades' => []];
+
+        $items = \grade_item::fetch_all(['courseid' => $this->courseid]) ?: [];
+        $grades = [];
+        $hiddenfound = false;
+        foreach ($items as $itemid => $item) {
+            $grades[$itemid] = $this->get_user_grade($itemid);
+            $grades[$itemid]->grade_item = $item;
+            $hiddenfound = $hiddenfound || $grades[$itemid]->is_hidden();
+        }
+        // The recalculation is expensive, and only needed when something is hidden.
+        if ($hiddenfound) {
+            $this->hidingaffected = \grade_grade::get_hiding_affected($grades, $items);
+        }
+        return $this->hidingaffected;
+    }
+
+    /**
      * Build the structured grade data by traversing the grade tree.
      */
     protected function build_grade_data(): void {
@@ -1519,7 +1603,7 @@ class report extends \grade_report {
             if ($itemweight == 0 && !$this->is_extra_credit($childitem)) {
                 continue;
             }
-            $ishidden = $childitem->is_hidden() && !$this->canviewhidden;
+            $ishidden = $this->is_hidden_for_user($childitem);
             // Wrap with item weight relative to wrapper = 1.0 so per-category
             // averaging math (which expects item weights to be normalised
             // within their parent) collapses cleanly to the item's own pct.
@@ -1595,7 +1679,7 @@ class report extends \grade_report {
                         continue;
                     }
                     $haschilditems = true;
-                    $ishidden = $childitem->is_hidden() && !$this->canviewhidden;
+                    $ishidden = $this->is_hidden_for_user($childitem);
                     $items[] = $this->process_grade_item($childitem, $catweight, $effectiveweight, $ishidden);
                 } else if ($child['type'] === 'category') {
                     $haschilditems = true;
@@ -1719,7 +1803,7 @@ class report extends \grade_report {
      * @param \grade_item $item The grade item.
      * @param float $catweight The weight of the parent category (for display).
      * @param float $effectiveweight The effective weight of the parent category in the course.
-     * @param bool $ishidden Whether this item is hidden from the current user.
+     * @param bool $ishidden Whether this item, or the user's grade for it, is hidden from the current user.
      * @return array The item data structure.
      */
     protected function process_grade_item(
@@ -1890,10 +1974,8 @@ class report extends \grade_report {
      * @return array Category total data.
      */
     protected function get_category_total_data(\grade_item $catitem): array {
-        $gradegrade = $this->get_user_grade($catitem->id);
         return [
-            'grade' => ($gradegrade->finalgrade !== null)
-                ? $this->format_grade($gradegrade->finalgrade, $catitem) : '–',
+            'grade' => $this->format_grade($this->get_visible_finalgrade($catitem), $catitem),
             'grademax' => $this->format_grademax((float)$catitem->grademax, $catitem),
         ];
     }
@@ -2123,18 +2205,13 @@ class report extends \grade_report {
      * @return array Course total data with 'grade', 'grademax', and 'percentage' keys.
      */
     public function get_course_total(): array {
-        $gradegrade = $this->get_user_grade($this->courseitem->id);
+        $finalgrade = $this->get_visible_finalgrade($this->courseitem);
         $percentage = '–';
-        if ($gradegrade->finalgrade !== null && (float)$this->courseitem->grademax > 0) {
-            $percentage = $this->format_percentage(
-                (float)$gradegrade->finalgrade / (float)$this->courseitem->grademax
-            );
+        if ($finalgrade !== null && (float)$this->courseitem->grademax > 0) {
+            $percentage = $this->format_percentage($finalgrade / (float)$this->courseitem->grademax);
         }
         return [
-            'grade' => $this->format_grade(
-                $gradegrade->finalgrade !== null ? (float)$gradegrade->finalgrade : null,
-                $this->courseitem
-            ),
+            'grade' => $this->format_grade($finalgrade, $this->courseitem),
             'grademax' => $this->format_grademax((float)$this->courseitem->grademax, $this->courseitem),
             'percentage' => $percentage,
         ];
@@ -2312,10 +2389,10 @@ class report extends \grade_report {
         }
 
         // Course total bar.
-        $gradegrade = $this->get_user_grade($this->courseitem->id);
+        $finalgrade = $this->get_visible_finalgrade($this->courseitem);
         $coursepercent = 0;
-        if ($gradegrade->finalgrade !== null && (float)$this->courseitem->grademax > 0) {
-            $coursepercent = round((float)$gradegrade->finalgrade / (float)$this->courseitem->grademax * 100, 1);
+        if ($finalgrade !== null && (float)$this->courseitem->grademax > 0) {
+            $coursepercent = round($finalgrade / (float)$this->courseitem->grademax * 100, 1);
         }
 
         // Best possible: assume 100% on all ungraded items.
@@ -3004,6 +3081,11 @@ class report extends \grade_report {
             $finalgrade = isset($grades[$uid]) ? (float)$grades[$uid]->finalgrade : 0;
             $percentages[$uid] = ($grademax > 0) ? round($finalgrade / $grademax * 100, 1) : 0;
         }
+        // The student's own figure is shown back to them, so it must leave out their hidden grades.
+        if (isset($percentages[$this->userid])) {
+            $finalgrade = (float)$this->get_visible_finalgrade($this->courseitem);
+            $percentages[$this->userid] = ($grademax > 0) ? round($finalgrade / $grademax * 100, 1) : 0;
+        }
 
         arsort($percentages);
 
@@ -3126,7 +3208,7 @@ class report extends \grade_report {
             "courseid = :courseid AND itemtype != 'course' AND itemtype != 'category'",
             ['courseid' => $this->courseid],
             '',
-            'id, grademax'
+            'id, grademax, hidden'
         );
 
         if (empty($gradeitems)) {
@@ -3140,7 +3222,7 @@ class report extends \grade_report {
         [$uinsql, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'usr');
 
         $allgrades = $DB->get_records_sql(
-            "SELECT id, userid, itemid, finalgrade, timemodified
+            "SELECT id, userid, itemid, finalgrade, timemodified, hidden
                FROM {grade_grades}
               WHERE itemid $iinsql AND userid $uinsql AND finalgrade IS NOT NULL
            ORDER BY timemodified ASC, id ASC",
@@ -3151,6 +3233,12 @@ class report extends \grade_report {
         $userfirstandlast = [];
         foreach ($allgrades as $grade) {
             $uid = (int)$grade->userid;
+            // Hidden grades (for the class or for this student) are not posted yet.
+            $ishidden = self::is_hidden_value($grade->hidden)
+                || self::is_hidden_value($gradeitems[$grade->itemid]->hidden ?? 0);
+            if ($ishidden && !$this->canviewhidden) {
+                continue;
+            }
             $gmax = (float)($gradeitems[$grade->itemid]->grademax ?? 100);
             if ($gmax <= 0) {
                 continue;
@@ -3934,6 +4022,11 @@ class report extends \grade_report {
                 AND gi.hidden = 0",
             ['courseid' => $this->courseid]
         );
+
+        // Feedback on a grade hidden for this student is not available to them yet.
+        $assignitems = array_filter($assignitems, function ($gi) {
+            return !self::is_hidden_value($this->usergrades[$gi->id]->hidden ?? 0);
+        });
 
         if (empty($assignitems)) {
             return null;
@@ -5950,7 +6043,7 @@ class report extends \grade_report {
         [$insqlitems, $inparamsitems] = $DB->get_in_or_equal($itemids, SQL_PARAMS_NAMED, 'gi');
         [$insqlusers, $inparamsusers] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'gu');
         $allgrades = $DB->get_records_sql(
-            "SELECT id, userid, itemid, finalgrade
+            "SELECT id, userid, itemid, finalgrade, hidden
                FROM {grade_grades}
               WHERE itemid $insqlitems AND userid $insqlusers",
             array_merge($inparamsitems, $inparamsusers)
@@ -5958,6 +6051,10 @@ class report extends \grade_report {
 
         $usergrades = [];
         foreach ($allgrades as $gg) {
+            // A grade hidden for this student is treated as not posted, like a hidden item.
+            if (!$this->canviewhidden && self::is_hidden_value($gg->hidden)) {
+                continue;
+            }
             $usergrades[$gg->userid][$gg->itemid] = $gg->finalgrade;
         }
 
@@ -6032,7 +6129,7 @@ class report extends \grade_report {
             if ((float)$item->grademax <= 0) {
                 continue;
             }
-            if (!$this->canviewhidden && !empty($item->hidden)) {
+            if (!$this->canviewhidden && self::is_hidden_value($item->hidden)) {
                 continue;
             }
             $weight = (float)$item->aggregationcoef2 > 0

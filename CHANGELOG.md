@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.12.1] - 2026-10-02
+
+### Fixed
+- **A grade hidden for an individual student is no longer shown to that student.** The student report only checked whether the grade item was hidden for the whole class, so a mark hidden for one student in the gradebook (including "hidden until" a date) was still displayed. Such a grade is now treated as not posted: the row shows "Not posted", and it is left out of the running totals, progress bars, goal planner and score-based widgets. Category and course totals are recalculated without hidden grades, so a hidden mark cannot be worked out from them. The feedback widget no longer lists an assignment whose grade is hidden for the student, and the teacher summary's running averages skip individually hidden grades as they already did hidden items. Teachers who turn on "show hidden" still see the real marks and totals.
+
 ## [2.12.0] - 2026-09-28
 
 ### Added

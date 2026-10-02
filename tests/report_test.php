@@ -232,6 +232,102 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
+     * Find a grade item's row in the report's grade data.
+     *
+     * @param report $report The report.
+     * @param int $itemid The grade item ID.
+     * @return array The item data.
+     */
+    protected function find_item(report $report, int $itemid): array {
+        foreach ($report->get_grade_data() as $cat) {
+            foreach ($cat['items'] ?? [] as $item) {
+                if ($item['itemid'] === $itemid) {
+                    return $item;
+                }
+            }
+        }
+        $this->fail("Grade item {$itemid} not found in the report");
+    }
+
+    /**
+     * A grade hidden for one student only is treated as not posted for that student.
+     */
+    public function test_individually_hidden_grade_not_posted(): void {
+        $data = $this->create_test_data();
+        $generator = $this->getDataGenerator();
+        $course = $data['course'];
+        $student = $data['student'];
+        $other = $generator->create_user();
+        $generator->enrol_user($other->id, $course->id, 'student');
+
+        $item1 = $data['gradeitem1'];
+        $item2 = $data['gradeitem2'];
+        $item2->update_final_grade($student->id, 50.0, 'test');
+        $item1->update_final_grade($other->id, 80.0, 'test');
+        grade_regrade_final_grades($course->id);
+
+        // Hide the first student's grade only; the item stays visible to the class.
+        $grade = \grade_grade::fetch(['itemid' => $item1->id, 'userid' => $student->id]);
+        $grade->set_hidden(1);
+        $this->assertFalse(\grade_item::fetch(['id' => $item1->id])->is_hidden());
+
+        $notposted = get_string('notposted', 'gradereport_coifish');
+        $report = $this->create_report($course, $student->id);
+        $hidden = $this->find_item($report, $item1->id);
+        $this->assertTrue($hidden['ishidden']);
+        $this->assertNull($hidden['grade_raw']);
+        $this->assertSame($notposted, $hidden['grade']);
+        $this->assertSame($notposted, $hidden['contribution']);
+
+        // The visible grade is unaffected, and the totals leave the hidden mark out.
+        $visible = $this->find_item($report, $item2->id);
+        $this->assertFalse($visible['ishidden']);
+        $this->assertEquals(50.0, $visible['grade_raw']);
+        $this->assertEquals(50.0, $report->get_running_total()['percentage_raw']);
+        $total = $report->get_course_total();
+        $this->assertStringContainsString('50', $total['grade']);
+        $this->assertStringNotContainsString('125', $total['grade']);
+        $this->assertEquals(25.0, $report->get_progress_data()['coursetotalbar']['percentage']);
+
+        // A classmate whose grade is not hidden still sees their mark.
+        $otheritem = $this->find_item($this->create_report($course, $other->id), $item1->id);
+        $this->assertFalse($otheritem['ishidden']);
+        $this->assertEquals(80.0, $otheritem['grade_raw']);
+
+        // The teacher's summary averages treat the hidden grade as not posted.
+        $averages = $report->get_bulk_running_averages([$student->id, $other->id]);
+        $this->assertEquals(50.0, $averages[$student->id]);
+        $this->assertEquals(80.0, $averages[$other->id]);
+
+        // A teacher who opts in to hidden grades sees the real mark and total.
+        $this->setUser($data['teacher']);
+        $teacherreport = $this->create_report($course, $student->id, true);
+        $shown = $this->find_item($teacherreport, $item1->id);
+        $this->assertFalse($shown['ishidden']);
+        $this->assertEquals(75.0, $shown['grade_raw']);
+        $this->assertStringContainsString('125', $teacherreport->get_course_total()['grade']);
+    }
+
+    /**
+     * A grade "hidden until" a date is not posted before that date and posted after it.
+     */
+    public function test_individually_hidden_until_grade(): void {
+        $data = $this->create_test_data();
+        $item1 = $data['gradeitem1'];
+        $grade = \grade_grade::fetch(['itemid' => $item1->id, 'userid' => $data['student']->id]);
+
+        $grade->set_hidden(time() + DAYSECS);
+        $item = $this->find_item($this->create_report($data['course'], $data['student']->id), $item1->id);
+        $this->assertTrue($item['ishidden']);
+        $this->assertNull($item['grade_raw']);
+
+        $grade->set_hidden(time() - DAYSECS);
+        $item = $this->find_item($this->create_report($data['course'], $data['student']->id), $item1->id);
+        $this->assertFalse($item['ishidden']);
+        $this->assertEquals(75.0, $item['grade_raw']);
+    }
+
+    /**
      * Test the progress data structure.
      */
     public function test_get_progress_data(): void {
