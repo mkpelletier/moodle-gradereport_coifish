@@ -72,6 +72,18 @@ if ($ADMIN->fulltree) {
         '%'
     ));
 
+    // Borderline band above the pass mark (amber warning in the table view).
+    $settings->add(new gradereport_coifish_admin_setting_configslider(
+        'gradereport_coifish/threshold_borderline',
+        get_string('threshold_borderline', 'gradereport_coifish'),
+        get_string('threshold_borderline_desc', 'gradereport_coifish'),
+        10,
+        0,
+        30,
+        1,
+        '%'
+    ));
+
     // Merit threshold (optional — uncheck to disable).
     $settings->add(new gradereport_coifish_admin_setting_configoptionalslider(
         'gradereport_coifish/threshold_merit',

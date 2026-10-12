@@ -139,6 +139,7 @@ class student_report implements renderable, templatable {
         $data->runningtotal = $this->runningtotal;
         if ($this->runningtotal) {
             $runningtotaldata = $this->report->get_running_total();
+            $runningtotaldata['outlook'] = $this->pass_outlook_text($runningtotaldata);
             $data->runningtotaldata = $runningtotaldata;
 
             // Inject per-category running totals into the category data for the table view.
@@ -147,6 +148,9 @@ class student_report implements renderable, templatable {
                 if (isset($data->categories[$i])) {
                     $data->categories[$i]['hasrunningtotal'] = true;
                     $data->categories[$i]['runningtotalpercentage'] = $crt['percentage'];
+                    $data->categories[$i]['runningtotalfail'] = $crt['isfail'];
+                    $data->categories[$i]['runningtotalborderline'] = $crt['isborderline'];
+                    $data->categories[$i]['runningtotalstatus'] = $crt['statuslabel'];
                 }
             }
         }
@@ -269,6 +273,41 @@ class student_report implements renderable, templatable {
         $data->showhidden = $this->showhidden;
 
         return $data;
+    }
+
+    /**
+     * Tooltip for a mark average that is below, or only just above, the pass mark:
+     * what is needed on the remaining assessments to pass.
+     *
+     * @param array $runningtotal Running total data from report::get_running_total().
+     * @return string The tooltip text, or '' when the average needs no warning.
+     */
+    protected function pass_outlook_text(array $runningtotal): string {
+        if (empty($runningtotal['isfail']) && empty($runningtotal['isborderline'])) {
+            return '';
+        }
+        $component = 'gradereport_coifish';
+        $outlook = $this->report->get_pass_outlook();
+        $a = (object)['passmark' => $outlook['passmark'], 'required' => $outlook['required']];
+
+        $parts = [];
+        if (!empty($runningtotal['isborderline'])) {
+            $parts[] = get_string('passoutlook_borderline', $component, $a);
+        }
+        if ($outlook['already_met']) {
+            // Enough has been banked to pass whatever happens next; nothing to add.
+            $needed = '';
+        } else if (!$outlook['hasungraded']) {
+            $needed = get_string('passoutlook_allgraded', $component, $a);
+        } else if (!$outlook['achievable']) {
+            $needed = get_string('passoutlook_unreachable', $component, $a);
+        } else {
+            $needed = get_string($this->isteacherview ? 'passoutlook_need_teacher' : 'passoutlook_need', $component, $a);
+        }
+        if ($needed !== '') {
+            $parts[] = $needed;
+        }
+        return $parts ? implode(' ', $parts) : $runningtotal['statuslabel'];
     }
 
     /**

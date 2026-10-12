@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0] - 2026-10-12
+
+### Added
+- **Pass-mark warning colours in the table view.** In a student's grade report, a graded assessment below the pass mark is now shown in red with a warning icon, and one at or above the pass mark but within the new borderline band is shown in amber. The same applies to each category's mark average. The course **Mark average** row (based on graded items only) turns red or amber instead of always being green, in bold, with a tooltip saying what average is needed on the remaining assessments to reach the pass mark, or that the pass mark can no longer be reached. The tooltip addresses the student ("You need...") in their own view and refers to "This student" for teachers. Ungraded, not-yet-posted and extra-credit items are never flagged, and the **Marks achieved** row is unchanged because it counts ungraded work as zero.
+- **Borderline band setting** (`threshold_borderline`, default 10 percentage points) under Grade thresholds. Set it to 0 to turn the amber band off.
+- **Demo generator covers the student pulse dashboard and the new colours.** `cli/generate_demo.php` now enables the pulse dashboard for the demo course and writes five fortnights of pulse history per student, so the modal opens the first time each student enters the course. It adds two students, one failing and one just above the pass mark, and gives every demo student a login (first name plus the course ID, password printed at the end of the run). The new `--reset-pulse=COURSEID` option re-arms the modal for every student in a course, for retaking screenshots.
+
 ## [2.12.1] - 2026-10-02
 
 ### Fixed

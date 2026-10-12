@@ -1874,6 +1874,12 @@ class report extends \grade_report {
             'hasextension' => false,
         ];
 
+        // Pass-mark warning for a posted mark (extra credit is never a fail).
+        $scored = $graded && !$ishidden && !$isextracredit && (float)$item->grademax > 0;
+        $result += $this->get_pass_status(
+            $scored ? (float)$gradegrade->finalgrade / (float)$item->grademax * 100 : null
+        );
+
         // Add late submission status (skip for hidden items — grades not posted yet).
         if (!$ishidden) {
             $status = $this->get_submission_status($item);
@@ -2224,7 +2230,8 @@ class report extends \grade_report {
      * have been graded, re-normalizing weights within the category. Categories with
      * no graded items are excluded from the course-level calculation.
      *
-     * @return array Running total data with 'percentage' key, or null percentage if nothing graded.
+     * @return array Running total data with 'percentage' key (a dash if nothing graded), plus the
+     *               pass-mark warning keys from get_pass_status() when there is a percentage.
      */
     public function get_running_total(): array {
         $categoryresults = [];
@@ -2264,7 +2271,7 @@ class report extends \grade_report {
         return [
             'percentage' => $this->format_percentage($runningpercentage),
             'percentage_raw' => round($runningpercentage * 100, 1),
-        ];
+        ] + $this->get_pass_status($runningpercentage * 100);
     }
 
     /**
@@ -2330,7 +2337,8 @@ class report extends \grade_report {
      * Returns an array keyed by category name with formatted percentage strings,
      * or null for categories with no graded items.
      *
-     * @return array Array of ['percentage' => string, 'percentage_raw' => float] keyed by index.
+     * @return array Array of ['percentage' => string, 'percentage_raw' => float] plus the pass-mark
+     *               warning keys from get_pass_status(), keyed by index.
      */
     public function get_category_running_totals(): array {
         $result = [];
@@ -2340,7 +2348,7 @@ class report extends \grade_report {
                 $result[$i] = [
                     'percentage' => $this->format_percentage($raw),
                     'percentage_raw' => round($raw * 100, 1),
-                ];
+                ] + $this->get_pass_status($raw * 100);
             }
         }
         return $result;
@@ -4930,6 +4938,64 @@ class report extends \grade_report {
     protected function get_pass_threshold(): int {
         $val = get_config('gradereport_coifish', 'threshold_pass');
         return ($val !== false && $val !== '') ? (int)$val : 50;
+    }
+
+    /**
+     * Get the borderline band above the pass mark from plugin settings.
+     *
+     * @return int Width of the band in percentage points (0 turns it off).
+     */
+    protected function get_borderline_margin(): int {
+        $val = get_config('gradereport_coifish', 'threshold_borderline');
+        return ($val !== false && $val !== '') ? max(0, (int)$val) : 10;
+    }
+
+    /**
+     * Classify a percentage against the pass mark, for the table view's warning colours.
+     *
+     * The percentage is rounded as it is displayed, so a mark shown as the pass
+     * mark is never flagged as below it.
+     *
+     * @param float|null $percent The percentage (0–100), or null when there is nothing to classify.
+     * @return array Keys: 'isfail' (below the pass mark), 'isborderline' (within the band
+     *               above it) and 'statuslabel' (text for the warning, '' when neither).
+     */
+    protected function get_pass_status(?float $percent): array {
+        $status = ['isfail' => false, 'isborderline' => false, 'statuslabel' => ''];
+        if ($percent === null) {
+            return $status;
+        }
+        $percent = round($percent, 1);
+        $pass = $this->get_pass_threshold();
+        if ($percent < $pass) {
+            $status['isfail'] = true;
+            $status['statuslabel'] = get_string('status_belowpass', 'gradereport_coifish', $pass);
+        } else if ($percent < $pass + $this->get_borderline_margin()) {
+            $status['isborderline'] = true;
+            $status['statuslabel'] = get_string('status_nearpass', 'gradereport_coifish', $pass);
+        }
+        return $status;
+    }
+
+    /**
+     * What the student needs on the remaining assessments to reach the pass mark.
+     *
+     * @return array Keys: 'passmark' (int), 'required' (float average needed, 0–100),
+     *               'achievable' (bool), 'already_met' (bool) and 'hasungraded' (bool).
+     */
+    public function get_pass_outlook(): array {
+        $pass = $this->get_pass_threshold();
+        $goal = $this->calculate_goal_targets(
+            [['label' => get_string('threshold_pass', 'gradereport_coifish'), 'value' => $pass]],
+            $this->calculate_best_possible()
+        )[0];
+        return [
+            'passmark' => $pass,
+            'required' => $goal['required'],
+            'achievable' => $goal['achievable'],
+            'already_met' => $goal['already_met'],
+            'hasungraded' => $this->has_ungraded_items(),
+        ];
     }
 
     /**

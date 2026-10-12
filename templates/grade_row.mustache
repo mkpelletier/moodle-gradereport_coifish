@@ -18,6 +18,9 @@
     * islate (bool) - Whether the submission was late.
     * latetext (string) - Human-readable late duration for tooltip.
     * hasextension (bool) - Whether an extension was granted (assign only).
+    * isfail (bool) - Whether the mark is below the pass mark.
+    * isborderline (bool) - Whether the mark is only just above the pass mark.
+    * statuslabel (string) - Pass-mark warning text (empty if none).
 
     This template is a partial that renders table rows (<tr>).
     It must be included inside a <table><tbody>...</tbody></table> wrapper.
@@ -40,7 +43,7 @@
 </tr>
 {{/ishidden}}
 {{^ishidden}}
-<tr{{^graded}} class="text-muted"{{/graded}}{{#isextracredit}} class="table-info"{{/isextracredit}}>
+<tr{{^graded}} class="text-muted"{{/graded}}{{#isextracredit}} class="table-info"{{/isextracredit}}{{#isfail}} class="table-danger"{{/isfail}}{{#isborderline}} class="table-warning"{{/isborderline}}>
     <td>
         {{#hasurl}}<a href="{{itemurl}}">{{itemname}}</a>{{/hasurl}}
         {{^hasurl}}
@@ -52,7 +55,9 @@
         {{#islate}}<span class="badge gradeoverview-late-badge ms-1" title="{{latetext}}">{{#str}}late, gradereport_coifish{{/str}}</span>{{/islate}}
         {{#hasextension}}<span class="badge gradeoverview-extension-badge ms-1">{{#str}}extension, gradereport_coifish{{/str}}</span>{{/hasextension}}
     </td>
-    <td>{{grade}} / {{grademax}}</td>
+    <td{{#isfail}} class="gradeoverview-fail"{{/isfail}}{{#isborderline}} class="gradeoverview-borderline"{{/isborderline}}>
+        {{#statuslabel}}<i class="fa fa-exclamation-triangle me-1" aria-hidden="true" title="{{statuslabel}}"></i><span class="visually-hidden">{{statuslabel}}</span>{{/statuslabel}}{{grade}} / {{grademax}}
+    </td>
     <td>{{contribution}}</td>
 </tr>
 {{/ishidden}}

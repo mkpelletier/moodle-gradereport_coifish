@@ -14,6 +14,9 @@
     * categorytotal (object) - Category total with grade and grademax.
     * hasrunningtotal (bool) - Whether to show a running total for this category.
     * runningtotalpercentage (string) - The running total percentage (e.g. "72.5%").
+    * runningtotalfail (bool) - Whether the running total is below the pass mark.
+    * runningtotalborderline (bool) - Whether the running total is only just above the pass mark.
+    * runningtotalstatus (string) - Pass-mark warning text for the running total (empty if none).
 
     Example context (json):
     {
@@ -66,12 +69,13 @@
                         <td class="font-weight-bold">
                             {{categorytotal.grade}} / {{categorytotal.grademax}}
                         </td>
-                        <td class="font-weight-bold">
+                        <td class="font-weight-bold{{#runningtotalfail}} table-danger gradeoverview-fail{{/runningtotalfail}}{{#runningtotalborderline}} table-warning gradeoverview-borderline{{/runningtotalborderline}}">
                             {{#hasrunningtotal}}
                                 <span data-bs-toggle="tooltip"
-                                      title="{{#str}}categoryrunningtotal_help, gradereport_coifish{{/str}}">
-                                    <i class="fa fa-line-chart me-1 text-primary" aria-hidden="true"></i>{{runningtotalpercentage}}
+                                      title="{{#str}}categoryrunningtotal_help, gradereport_coifish{{/str}}{{#runningtotalstatus}} — {{runningtotalstatus}}{{/runningtotalstatus}}">
+                                    {{#runningtotalstatus}}<i class="fa fa-exclamation-triangle me-1" aria-hidden="true"></i>{{/runningtotalstatus}}{{^runningtotalstatus}}<i class="fa fa-line-chart me-1 text-primary" aria-hidden="true"></i>{{/runningtotalstatus}}{{runningtotalpercentage}}
                                 </span>
+                                {{#runningtotalstatus}}<span class="visually-hidden">{{runningtotalstatus}}</span>{{/runningtotalstatus}}
                             {{/hasrunningtotal}}
                         </td>
                     </tr>

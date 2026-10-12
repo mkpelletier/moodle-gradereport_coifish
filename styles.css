@@ -52,6 +52,29 @@
     text-decoration: underline;
 }
 
+/* Pass-mark warning colours in the table view: red below the pass mark, amber just above it. */
+.gradereport-coifish td.gradeoverview-fail,
+.gradereport-coifish tr.gradeoverview-fail > th,
+.gradereport-coifish tr.gradeoverview-fail > td {
+    color: #a50e1c;
+    font-weight: 700;
+}
+
+.gradereport-coifish td.gradeoverview-borderline,
+.gradereport-coifish tr.gradeoverview-borderline > th,
+.gradereport-coifish tr.gradeoverview-borderline > td {
+    color: #7a4b00;
+    font-weight: 700;
+}
+
+.gradereport-coifish tr.gradeoverview-fail > th {
+    border-left: 4px solid #dc3545;
+}
+
+.gradereport-coifish tr.gradeoverview-borderline > th {
+    border-left: 4px solid #ffc107;
+}
+
 /* Late and extension badge styles. */
 .gradereport-coifish .gradeoverview-late-badge {
     background-color: #dc3545;

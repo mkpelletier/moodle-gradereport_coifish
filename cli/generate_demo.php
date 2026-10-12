@@ -17,13 +17,19 @@
 /**
  * CLI script to generate a demo course for the Grade Tracker report.
  *
- * Creates a course with 3 grade categories, 10 assignments, 20 students,
- * and realistic grade distributions to showcase the dashboard.
+ * Creates a course with 3 grade categories, 10 assignments, 22 students,
+ * and realistic grade distributions to showcase the dashboard. The student
+ * pulse dashboard is enabled with five fortnights of history per student, so
+ * its modal opens the first time each student enters the course.
  *
- * Usage: php generate_demo.php [--ended]
+ * Usage: php generate_demo.php [--ended] [--reset-pulse=COURSEID]
  *
  * With --ended the course ran for the past 12 weeks and finished yesterday, so
  * local_coifish's build_profiles task snapshots it into the longitudinal record.
+ *
+ * With --reset-pulse=COURSEID nothing is created: the pulse modal is re-armed
+ * for every student in that course (it otherwise shows once per period), which
+ * is handy when retaking screenshots.
  *
  * @package    gradereport_coifish
  * @copyright  2026 South African Theological Seminary (ict@sats.ac.za)
@@ -35,6 +41,7 @@ define('CLI_SCRIPT', true);
 require(__DIR__ . '/../../../../config.php');
 require_once($CFG->libdir . '/clilib.php');
 require_once($CFG->libdir . '/gradelib.php');
+require_once($CFG->dirroot . '/grade/lib.php');
 require_once($CFG->dirroot . '/mod/assign/lib.php');
 require_once($CFG->dirroot . '/mod/assign/locallib.php');
 require_once($CFG->dirroot . '/course/lib.php');
@@ -45,9 +52,27 @@ require_once($CFG->libdir . '/testing/generator/lib.php');
 require_once($CFG->libdir . '/testing/generator/data_generator.php');
 $generator = new \testing_data_generator();
 
-[$options] = cli_get_params(['ended' => false, 'help' => false], ['h' => 'help']);
+[$options] = cli_get_params(['ended' => false, 'reset-pulse' => 0, 'help' => false], ['h' => 'help']);
 if ($options['help']) {
-    cli_writeln("Generate a CoIFish demo course.\n\nOptions:\n  --ended   Make the course finish yesterday (12 weeks long).");
+    cli_writeln("Generate a CoIFish demo course.\n\nOptions:\n" .
+        "  --ended                 Make the course finish yesterday (12 weeks long).\n" .
+        "  --reset-pulse=COURSEID  Re-arm the pulse modal for every student in a course, then exit.");
+    exit(0);
+}
+
+if ($options['reset-pulse']) {
+    $resetcourseid = (int)$options['reset-pulse'];
+    $pulseuserids = $DB->get_fieldset_select(
+        'gradereport_coifish_student_pulse',
+        'DISTINCT userid',
+        'courseid = ?',
+        [$resetcourseid]
+    );
+    foreach ($pulseuserids as $pulseuserid) {
+        unset_user_preference(\gradereport_coifish\pulse::PREF_LASTSHOWN . $resetcourseid, $pulseuserid);
+        unset_user_preference(\gradereport_coifish\pulse::PREF_MUTED . $resetcourseid, $pulseuserid);
+    }
+    cli_writeln("Re-armed the pulse modal for " . count($pulseuserids) . " students in course {$resetcourseid}.");
     exit(0);
 }
 
@@ -223,26 +248,31 @@ cli_writeln("  Created assignment: Final Exam (max: 100, due: " . date('Y-m-d', 
 
 cli_writeln("Created 10 assignments across 3 categories");
 
-// 5. Create 20 students.
+// 5. Create 22 students.
 
 $firstnames = [
     'Emma', 'Liam', 'Olivia', 'Noah', 'Ava', 'Ethan', 'Sophia', 'Mason',
     'Isabella', 'James', 'Mia', 'Benjamin', 'Charlotte', 'Lucas', 'Amelia',
-    'Alexander', 'Harper', 'Daniel', 'Evelyn', 'Michael',
+    'Alexander', 'Harper', 'Daniel', 'Evelyn', 'Michael', 'Oliver', 'Grace',
 ];
 
 $lastnames = [
     'Anderson', 'Brown', 'Clark', 'Davis', 'Evans', 'Fisher', 'Garcia',
     'Harris', 'Ibrahim', 'Johnson', 'King', 'Lewis', 'Martinez', 'Nelson',
-    'Olsen', 'Patel', 'Quinn', 'Roberts', 'Smith', 'Thompson',
+    'Olsen', 'Patel', 'Quinn', 'Roberts', 'Smith', 'Thompson', 'Underwood', 'Vance',
 ];
+
+// Demo students can log in directly (username is first name plus the course ID).
+$demopassword = 'Demo-1234';
 
 $students = [];
 $studentplugin = enrol_get_plugin('manual');
 $manualinstance = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => 'manual'], '*', MUST_EXIST);
 
-for ($i = 0; $i < 20; $i++) {
+for ($i = 0; $i < count($firstnames); $i++) {
     $user = $generator->create_user([
+        'username' => strtolower($firstnames[$i]) . $course->id,
+        'password' => $demopassword,
         'firstname' => $firstnames[$i],
         'lastname' => $lastnames[$i],
         'email' => strtolower($firstnames[$i]) . '.' . strtolower($lastnames[$i]) . '@demo.example.com',
@@ -256,7 +286,7 @@ for ($i = 0; $i < 20; $i++) {
 
     $students[] = $user;
 }
-cli_writeln("Created and enrolled 20 students (10 per group)");
+cli_writeln("Created and enrolled " . count($students) . " students across 2 groups");
 
 // 6. Define student performance profiles.
 // Each student gets a "base ability" that determines their general performance,
@@ -285,6 +315,8 @@ $profiles = [
     ['base' => 58, 'var' => 14, 'trend' => 0], // Daniel — inconsistent.
     ['base' => 77, 'var' => 8, 'trend' => 2], // Evelyn — above average, improving.
     ['base' => 62, 'var' => 11, 'trend' => 1], // Michael — below average.
+    ['base' => 38, 'var' => 6, 'trend' => -2], // Oliver — failing and slipping (red in the table view).
+    ['base' => 54, 'var' => 3, 'trend' => 0], // Grace — just above the pass mark (amber in the table view).
 ];
 
 // 7. Grade the assignments.
@@ -533,6 +565,8 @@ set_config('leaderboard_min_enrolment', '10', 'gradereport_coifish');
 // Enable gamification for this course.
 $coursesettings = [
     'gamification_enabled' => true,
+    'student_dashboard_enabled' => '1',
+    'student_dashboard_interval_days' => 14,
     'widgets' => [
         'overall' => true,
         'neighbours' => true,
@@ -554,12 +588,63 @@ cli_writeln("Enabled all gamification widgets (site + course level)");
 grade_regrade_final_grades($course->id);
 cli_writeln("\nRecomputed course grades");
 
+// 12. Student pulse history: five fortnightly snapshots per student, ending in
+// the current period, so the pulse modal opens on each student's next visit to
+// the course page. Each metric drifts with the student's trend, giving improving
+// students a streak and declining students a quieter stretch with suggestions.
+$pulseperiods = 5;
+$pulseinterval = 14 * DAYSECS;
+$latestperiod = \gradereport_coifish\pulse::period_start((int)$course->startdate, 14, time());
+// Offset from the student's base ability and drift per period, for each metric.
+$pulsemetrics = [
+    'engagement' => [-4, 4],
+    'social' => [-16, 3],
+    'selfregulation' => [-8, 3],
+    'feedbackpct' => [-10, 5],
+];
+foreach ($students as $si => $student) {
+    $profile = $profiles[$si];
+    // "Marks so far" is the mark average over graded work, as the report shows it.
+    $pulsereport = new \gradereport_coifish\report(
+        $course->id,
+        new grade_plugin_return(['type' => 'report', 'plugin' => 'coifish', 'courseid' => $course->id]),
+        context_course::instance($course->id),
+        $student->id
+    );
+    $latestgrade = (float)($pulsereport->get_running_total()['percentage_raw'] ?? $profile['base']);
+    $latest = [];
+    foreach ($pulsemetrics as $metric => [$offset]) {
+        $latest[$metric] = $profile['base'] + $offset + mt_rand(-5, 5);
+    }
+    for ($p = 0; $p < $pulseperiods; $p++) {
+        $back = $pulseperiods - 1 - $p;
+        $row = [
+            'courseid' => $course->id,
+            'userid' => $student->id,
+            'periodstart' => $latestperiod - $back * $pulseinterval,
+            'grade' => round(max(0, min(100, $latestgrade - $back * $profile['trend'] * 1.5)), 2),
+            'daysoffline' => $profile['base'] >= 60 ? mt_rand(0, 2) : mt_rand(4, 9),
+            'timecomputed' => $latestperiod - $back * $pulseinterval,
+        ];
+        foreach ($pulsemetrics as $metric => [$offset, $drift]) {
+            $jitter = $back > 0 ? mt_rand(-1, 1) : 0;
+            $row[$metric] = (int)max(0, min(100, $latest[$metric] - $back * $profile['trend'] * $drift + $jitter));
+        }
+        $DB->insert_record('gradereport_coifish_student_pulse', (object)$row);
+    }
+}
+cli_writeln("Enabled the student pulse dashboard with {$pulseperiods} fortnights of history per student");
+
 // Done.
 $url = new moodle_url('/grade/report/coifish/index.php', ['id' => $course->id]);
 cli_writeln("\n" . str_repeat('=', 60));
 cli_writeln("Demo course ready!");
 cli_writeln("Course ID: {$course->id}");
-cli_writeln("Students:  20 (10 in Group A, 10 in Group B)");
+cli_writeln("Students:  " . count($students) . " in Groups A and B, password {$demopassword}");
+cli_writeln("Pulse:     log in as a student and open the course page, e.g.");
+cli_writeln("             benjamin{$course->id} (improving), lucas{$course->id} (slipping),");
+cli_writeln("             oliver{$course->id} (failing), grace{$course->id} (just above the pass mark)");
+cli_writeln("           Re-arm with: php generate_demo.php --reset-pulse={$course->id}");
 cli_writeln("Graded:    8 of 10 assignments (2 future/ungraded)");
 cli_writeln("Live:      {$sittings} BigBlueButton sessions (seminar + group role-plays)");
 cli_writeln("URL:       {$url->out(false)}");

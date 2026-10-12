@@ -205,6 +205,62 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
+     * Marks below the pass mark are flagged as failing, and those just above it as borderline.
+     */
+    public function test_pass_status_flags(): void {
+        $data = $this->create_test_data();
+        $course = $data['course'];
+        $studentid = $data['student']->id;
+        set_config('threshold_pass', 50, 'gradereport_coifish');
+
+        // 75% is clear of the pass mark and of the default 10-point band above it.
+        $report = $this->create_report($course, $studentid);
+        $item = $this->find_item($report, (int)$data['gradeitem1']->id);
+        $this->assertFalse($item['isfail']);
+        $this->assertFalse($item['isborderline']);
+        $this->assertSame('', $item['statuslabel']);
+        $this->assertFalse($report->get_running_total()['isfail']);
+
+        // An ungraded item is never flagged.
+        $ungraded = $this->find_item($report, (int)$data['gradeitem2']->id);
+        $this->assertFalse($ungraded['isfail']);
+        $this->assertFalse($ungraded['isborderline']);
+
+        // 40% is below the pass mark, for the item and for the mark average.
+        $data['gradeitem1']->update_final_grade($studentid, 40.0, 'test');
+        $report = $this->create_report($course, $studentid);
+        $item = $this->find_item($report, (int)$data['gradeitem1']->id);
+        $this->assertTrue($item['isfail']);
+        $this->assertFalse($item['isborderline']);
+        $this->assertNotSame('', $item['statuslabel']);
+        $running = $report->get_running_total();
+        $this->assertTrue($running['isfail']);
+        $this->assertTrue($report->get_category_running_totals()[0]['isfail']);
+
+        // With one equally weighted assessment left, 60% on it reaches the pass mark.
+        $outlook = $report->get_pass_outlook();
+        $this->assertSame(50, $outlook['passmark']);
+        $this->assertTrue($outlook['hasungraded']);
+        $this->assertTrue($outlook['achievable']);
+        $this->assertFalse($outlook['already_met']);
+        $this->assertEqualsWithDelta(60.0, $outlook['required'], 0.1);
+
+        // 55% passes, but sits inside the band above the pass mark.
+        $data['gradeitem1']->update_final_grade($studentid, 55.0, 'test');
+        $report = $this->create_report($course, $studentid);
+        $item = $this->find_item($report, (int)$data['gradeitem1']->id);
+        $this->assertFalse($item['isfail']);
+        $this->assertTrue($item['isborderline']);
+        $this->assertTrue($report->get_running_total()['isborderline']);
+
+        // A band of 0 turns the borderline warning off.
+        set_config('threshold_borderline', 0, 'gradereport_coifish');
+        $report = $this->create_report($course, $studentid);
+        $this->assertFalse($this->find_item($report, (int)$data['gradeitem1']->id)['isborderline']);
+        $this->assertFalse($report->get_running_total()['isborderline']);
+    }
+
+    /**
      * Test that hidden items are excluded by default.
      */
     public function test_hidden_items_excluded(): void {
