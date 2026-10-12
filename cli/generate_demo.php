@@ -604,7 +604,7 @@ $pulsemetrics = [
 ];
 foreach ($students as $si => $student) {
     $profile = $profiles[$si];
-    // "Marks so far" is the mark average over graded work, as the report shows it.
+    // The pulse grade is the mark average over graded work, as the report shows it.
     $pulsereport = new \gradereport_coifish\report(
         $course->id,
         new grade_plugin_return(['type' => 'report', 'plugin' => 'coifish', 'courseid' => $course->id]),
