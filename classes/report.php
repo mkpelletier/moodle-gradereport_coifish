@@ -4999,6 +4999,71 @@ class report extends \grade_report {
     }
 
     /**
+     * Per-user recency data for a set of students in this course.
+     *
+     * "lastactive" is the latest of: last course access ({user_lastaccess},
+     * updated by any course page including quiz attempts and submissions),
+     * last logged course event (catches the mobile app and web services) and
+     * last forum post. A student with no recorded activity is absent.
+     *
+     * @param int[] $userids User IDs.
+     * @return array{lastaccess: array<int,int>, lastactive: array<int,int>} Maps of userid => timestamp.
+     */
+    protected function get_cohort_recency(array $userids): array {
+        global $DB;
+
+        $lastaccess = [];
+        $lastactive = [];
+        if (empty($userids)) {
+            return ['lastaccess' => $lastaccess, 'lastactive' => $lastactive];
+        }
+        $bump = function (int $uid, int $time) use (&$lastactive): void {
+            if ($time > ($lastactive[$uid] ?? 0)) {
+                $lastactive[$uid] = $time;
+            }
+        };
+
+        [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'rcy');
+        $params = array_merge(['courseid' => $this->courseid], $inparams);
+
+        $rs = $DB->get_records_sql(
+            "SELECT userid, timeaccess
+               FROM {user_lastaccess}
+              WHERE courseid = :courseid AND userid $insql",
+            $params
+        );
+        foreach ($rs as $rec) {
+            $lastaccess[(int)$rec->userid] = (int)$rec->timeaccess;
+            $bump((int)$rec->userid, (int)$rec->timeaccess);
+        }
+
+        $rs = $DB->get_records_sql(
+            "SELECT l.userid, MAX(l.timecreated) AS lastevent
+               FROM {logstore_standard_log} l
+              WHERE l.courseid = :courseid AND l.userid $insql
+           GROUP BY l.userid",
+            $params
+        );
+        foreach ($rs as $rec) {
+            $bump((int)$rec->userid, (int)$rec->lastevent);
+        }
+
+        $rs = $DB->get_records_sql(
+            "SELECT fp.userid, MAX(fp.created) AS lastpost
+               FROM {forum_posts} fp
+               JOIN {forum_discussions} fd ON fd.id = fp.discussion
+              WHERE fd.course = :courseid AND fp.userid $insql
+           GROUP BY fp.userid",
+            $params
+        );
+        foreach ($rs as $rec) {
+            $bump((int)$rec->userid, (int)$rec->lastpost);
+        }
+
+        return ['lastaccess' => $lastaccess, 'lastactive' => $lastactive];
+    }
+
+    /**
      * Get the stale activity threshold in days from plugin settings.
      *
      * @return int Number of days.
@@ -6688,16 +6753,11 @@ class report extends \grade_report {
             ? array_sum($peermessages) / count($peermessages)
             : 0;
 
-        // Per-user last forum activity.
-        $lastpostsql = "SELECT fp.userid, MAX(fp.created) AS lastpost
-                          FROM {forum_posts} fp
-                          JOIN {forum_discussions} fd ON fd.id = fp.discussion
-                         WHERE fd.course = :courseid AND fp.userid $insql
-                      GROUP BY fp.userid";
-        $lastposts = $DB->get_records_sql(
-            $lastpostsql,
-            array_merge(['courseid' => $this->courseid], $inparams)
-        );
+        // Per-user recency: last course access, and last activity of any kind
+        // (access, logged course event, forum post).
+        $recency = $this->get_cohort_recency($userids);
+        $lastaccessmap = $recency['lastaccess'];
+        $lastactivemap = $recency['lastactive'];
 
         // Cognitive Presence: engagement rate per student.
         // Excludes assignments/quizzes that the category's drop-lowest or
@@ -7003,7 +7063,7 @@ class report extends \grade_report {
         $tplevels = ['none' => 0, 'emerging' => 0, 'developing' => 0, 'established' => 0, 'exemplary' => 0];
 
         $atrisk = [];    // Students with 2+ risk flags.
-        $stale = [];     // Students inactive 14+ days on forums.
+        $stale = [];     // Students with no course activity of any kind within the window.
         $silentlearners = 0;  // Students who read but don't post.
         $lowengagement = 0;
         $lowfeedback = 0;
@@ -7124,12 +7184,15 @@ class report extends \grade_report {
                 ];
             }
 
-            // Social stale check.
-            $lastpost = isset($lastposts[$uid]) ? (int)$lastposts[$uid]->lastpost : 0;
+            // Recently inactive: no activity of any kind (course access, any
+            // logged course event, forum post) within the inactivity window.
+            // Students who have never been active are left to the course-access
+            // card, which handles "never accessed" separately.
+            $lastactive = $lastactivemap[$uid] ?? 0;
             $effectivenow = $this->effective_now();
-            $isstale = ($threads > 0 && $lastpost > 0 && ($effectivenow - $lastpost) >= $staledays * 86400);
+            $isstale = ($lastactive > 0 && ($effectivenow - $lastactive) >= $staledays * 86400);
             if ($isstale) {
-                $daysinactive = round(($effectivenow - $lastpost) / 86400);
+                $daysinactive = round(($effectivenow - $lastactive) / 86400);
                 $stale[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
@@ -7470,19 +7533,7 @@ class report extends \grade_report {
         $accessthreshold = $staledays;
         $coursestart = (int)(get_course($this->courseid)->startdate ?? 0);
         $effnowaccess = $this->effective_now();
-        $lastaccessmap = [];
-        if (!empty($userids)) {
-            [$insqlla, $inparamsla] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'la');
-            $larecords = $DB->get_records_sql(
-                "SELECT userid, timeaccess
-                   FROM {user_lastaccess}
-                  WHERE courseid = :courseid AND userid $insqlla",
-                array_merge(['courseid' => $this->courseid], $inparamsla)
-            );
-            foreach ($larecords as $rec) {
-                $lastaccessmap[(int)$rec->userid] = (int)$rec->timeaccess;
-            }
-        }
+        // The $lastaccessmap was loaded alongside the other per-user recency data.
         $noaccessstudents = [];
         foreach ($userids as $uid) {
             $lastaccess = $lastaccessmap[$uid] ?? 0;
@@ -8454,22 +8505,15 @@ class report extends \grade_report {
             }
             $fbreviewpct = $fbtotalcount > 0 ? round(($fbreviewed / $fbtotalcount) * 100) : 0;
 
-            // Stale count for this group.
+            // Stale count for this group — same rule as the cohort-wide
+            // "Recently inactive" list: no activity of any kind in the window.
             $stalecount = 0;
             $staledays = $this->get_stale_days();
-            $lastposts = $DB->get_records_sql(
-                "SELECT fp.userid, MAX(fp.created) AS lastpost
-                   FROM {forum_posts} fp
-                   JOIN {forum_discussions} fd ON fd.id = fp.discussion
-                  WHERE fd.course = :cid AND fp.userid $insql
-               GROUP BY fp.userid",
-                array_merge(['cid' => $this->courseid], $inparams)
-            );
+            $grouplastactive = $this->get_cohort_recency($uids)['lastactive'];
             $effectivenow = $this->effective_now();
             foreach ($uids as $uid) {
-                $threads = isset($participations[$uid]) ? (int)$participations[$uid]->threads : 0;
-                $lp = isset($lastposts[$uid]) ? (int)$lastposts[$uid]->lastpost : 0;
-                if ($threads > 0 && $lp > 0 && ($effectivenow - $lp) >= $staledays * 86400) {
+                $la = $grouplastactive[$uid] ?? 0;
+                if ($la > 0 && ($effectivenow - $la) >= $staledays * 86400) {
                     $stalecount++;
                 }
             }

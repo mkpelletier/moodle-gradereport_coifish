@@ -732,6 +732,70 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
+     * "Recently inactive" counts any course activity, not just forum posts: a
+     * student who last posted weeks ago but has accessed the course or logged
+     * an activity event since (e.g. a quiz attempt) is not flagged.
+     */
+    public function test_cohort_stale_uses_any_course_activity(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $forum = $generator->create_module('forum', ['course' => $course->id]);
+        $forumgen = $generator->get_plugin_generator('mod_forum');
+        $discussion = $forumgen->create_discussion([
+            'course' => $course->id, 'forum' => $forum->id, 'userid' => $teacher->id,
+        ]);
+
+        $report = $this->create_report($course, 0);
+        $now = $report->effective_now();
+        $old = $now - 40 * DAYSECS;
+
+        // All four students last posted 40 days ago.
+        $students = [];
+        foreach (['access', 'logged', 'silent', 'logonly'] as $key) {
+            $students[$key] = $generator->create_user();
+            $generator->enrol_user($students[$key]->id, $course->id, 'student');
+            if ($key !== 'logonly') {
+                $forumgen->create_post([
+                    'discussion' => $discussion->id, 'userid' => $students[$key]->id, 'created' => $old,
+                ]);
+            }
+        }
+        // Accessed the course 2 days ago.
+        $DB->insert_record('user_lastaccess', (object)[
+            'userid' => $students['access']->id, 'courseid' => $course->id, 'timeaccess' => $now - 2 * DAYSECS,
+        ]);
+        // Attempted a quiz yesterday (logged event, no lastaccess row).
+        $logrow = [
+            'eventname' => '\\mod_quiz\\event\\attempt_submitted', 'component' => 'mod_quiz',
+            'action' => 'submitted', 'target' => 'attempt', 'crud' => 'u', 'edulevel' => 2,
+            'contextid' => \context_course::instance($course->id)->id, 'contextlevel' => CONTEXT_COURSE,
+            'contextinstanceid' => $course->id, 'courseid' => $course->id, 'anonymous' => 0,
+            'origin' => 'web',
+        ];
+        $DB->insert_record('logstore_standard_log', (object)($logrow + [
+            'userid' => $students['logged']->id, 'timecreated' => $now - DAYSECS,
+        ]));
+        // Never posted; last logged event 30 days ago.
+        $DB->insert_record('logstore_standard_log', (object)($logrow + [
+            'userid' => $students['logonly']->id, 'timecreated' => $now - 30 * DAYSECS,
+        ]));
+
+        $this->setUser($teacher);
+        $stale = $this->create_report($course, 0)->get_cohort_insights_data()['stale'];
+        $staledays = array_column($stale, 'days', 'userid');
+
+        $this->assertArrayNotHasKey($students['access']->id, $staledays);
+        $this->assertArrayNotHasKey($students['logged']->id, $staledays);
+        $this->assertEquals(40, $staledays[$students['silent']->id]);
+        $this->assertEquals(30, $staledays[$students['logonly']->id]);
+    }
+
+    /**
      * Invoke a protected method on a report instance via reflection.
      *
      * @param report $report The report instance.

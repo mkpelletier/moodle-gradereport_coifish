@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.13.1] - 2026-11-11
+
+### Fixed
+- **"Recently inactive" now counts all course activity, not just forum posts.** The Recently inactive chips and the "Recently inactive students" card only looked at a student's last forum post, so a student who had just attempted a quiz, submitted work or opened the course was still listed as inactive for as long as they hadn't posted. A student's last activity is now the most recent of their last course access, their last logged event in the course (which also covers the mobile app) and their last forum post. Students who have been active before but have done nothing within the inactivity window are flagged; students who have never accessed the course remain on the "Students not accessing the course" card. The card text, methodology and the inactivity-threshold setting description are updated to match.
+- **The per-group "Disengagement cluster in group" comparison can fire again.** Its inactive-student count read an undefined variable and was always 0. It now uses the same rule as the cohort-wide list, via the new `report::get_cohort_recency()`.
+
 ## [2.13.0] - 2026-10-12
 
 ### Added
