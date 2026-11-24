@@ -2136,3 +2136,173 @@
         transition: none;
     }
 }
+
+/* ===== All participants insights: Act now / Watch / Understand bands =====
+   Each band sits on a faint tint so the three sections read as distinct groups.
+   Tints are mixed from the theme's own colours (so they follow custom themes and
+   dark mode) and are kept faint enough that the red/amber concern chips inside
+   still stand out. Cards and tables inside a band stay on the body background. */
+.gradetracker-band {
+    --gradetracker-band-ink: var(--bs-secondary-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.25rem 1.4rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.gradetracker-band-act {
+    --gradetracker-band-ink: var(--bs-warning-text-emphasis);
+    background: color-mix(in srgb, var(--bs-warning) 7%, var(--bs-body-bg));
+    border-color: color-mix(in srgb, var(--bs-warning) 30%, var(--bs-body-bg));
+}
+
+.gradetracker-band-watch {
+    --gradetracker-band-ink: var(--bs-primary);
+    background: color-mix(in srgb, var(--bs-primary) 5%, var(--bs-body-bg));
+    border-color: color-mix(in srgb, var(--bs-primary) 20%, var(--bs-body-bg));
+}
+
+.gradetracker-band-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gradetracker-band-ink);
+}
+
+.gradetracker-band-tag::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.gradetracker-band-title {
+    font-size: 1.25rem;
+    margin: 0.15rem 0 0.2rem;
+}
+
+.gradetracker-band-desc {
+    color: var(--bs-secondary-color);
+    font-size: 0.875rem;
+    margin-bottom: 0.9rem;
+}
+
+.gradetracker-band .gradetracker-insight-card,
+.gradetracker-band .gradetracker-band-surface,
+.gradetracker-band .table-responsive {
+    background: var(--bs-body-bg);
+}
+
+.gradetracker-band-surface {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+}
+
+.gradetracker-band-surface .table > :not(caption) > * > * {
+    padding: 0.5rem 0.75rem;
+    vertical-align: middle;
+}
+
+.gradetracker-attention-cb {
+    width: 2.5rem;
+}
+
+/* Concern chips in the attention list, coloured by kind. */
+.gradetracker-concern {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.25rem;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.gradetracker-concern-missed,
+.gradetracker-concern-failing,
+.gradetracker-concern-priorhigh {
+    background: var(--bs-danger-bg-subtle);
+    border-color: var(--bs-danger-border-subtle);
+    color: var(--bs-danger-text-emphasis);
+}
+
+.gradetracker-concern-stale {
+    background: var(--bs-warning-bg-subtle);
+    border-color: var(--bs-warning-border-subtle);
+    color: var(--bs-warning-text-emphasis);
+}
+
+.gradetracker-concern-presence {
+    background: var(--bs-info-bg-subtle);
+    border-color: var(--bs-info-border-subtle);
+    color: var(--bs-info-text-emphasis);
+}
+
+.gradetracker-concern-prior {
+    background: color-mix(in srgb, var(--bs-purple, #6f42c1) 12%, var(--bs-body-bg));
+    border-color: color-mix(in srgb, var(--bs-purple, #6f42c1) 30%, var(--bs-body-bg));
+    color: var(--bs-purple, #6f42c1);
+}
+
+.gradetracker-concern-extensions {
+    background: var(--bs-secondary-bg);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+
+.gradetracker-concern[title] {
+    cursor: help;
+}
+
+/* Chart launchers in the Understand band; the charts open in pop-ups. */
+.gradetracker-chart-launchers {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+}
+
+.gradetracker-chart-launch {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    text-align: start;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+}
+
+.gradetracker-chart-launch:hover,
+.gradetracker-chart-launch:focus-visible {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+.gradetracker-chart-launch-title {
+    font-weight: 600;
+}
+
+.gradetracker-chart-launch-desc {
+    font-size: 0.8125rem;
+    color: var(--bs-secondary-color);
+}
+
+.gradetracker-chart-launch-cta {
+    font-size: 0.8125rem;
+    color: var(--bs-primary);
+}
+
+@media (max-width: 575.98px) {
+    .gradetracker-band {
+        padding: 1rem 0.75rem 1.1rem;
+        border-radius: 0.5rem;
+    }
+}

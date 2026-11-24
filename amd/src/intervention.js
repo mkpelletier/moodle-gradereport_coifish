@@ -113,6 +113,13 @@ const openModal = ($btn) => {
     $('#intv-subject').val('');
     $('#intv-body').val('');
 
+    // A trigger can preselect an action (e.g. "Message selected" opens straight
+    // into the message composer); the change handler fills in the template.
+    const defaultaction = $btn.attr('data-default-action') || '';
+    if (defaultaction) {
+        $actionSelect.val(defaultaction).trigger('change');
+    }
+
     $modal.modal('show');
 };
 

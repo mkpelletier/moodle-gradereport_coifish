@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.14.0] - 2026-11-24
+
+The first step of the All participants redesign: the insights view is reorganised around what a teacher should do this week.
+
+### Changed
+- **Three sections: Act now, Watch and Understand.** The All participants insights view is grouped into three bands, each on a faint tint mixed from the theme's own colours (so they follow custom themes and dark mode). *Act now* holds "Students requiring attention"; *Watch* holds the class-wide diagnostic cards and course design notices; *Understand* holds the presence breakdowns, grade distribution, chart pop-ups and cross-group comparison.
+- **"Students requiring attention" moved to the top and now includes a single missed due date.** It used to need two or more risk flags, so a student whose only problem was a missed quiz or assignment never appeared. A missed due date, or a moderate or high risk profile from previous courses, is now enough on its own. Students with missed due dates come first (most missed first), then by number of concerns.
+- **Concerns are shown as coloured chips** (missed due dates, below pass mark, inactive, low presence, extensions, prior-course risk) instead of a comma-separated list. A single missed activity is named ("Missed Quiz 3"); hovering a "missed" or "prior-course risk" chip lists the activities or the risk factors. The table drops the per-presence and missed/extension count columns, which the chips now cover. "Below 50%" now reads "Below pass mark (n%)" and uses the configured pass mark.
+- **Message students from the list.** Each row has a checkbox, with "select all" and a one-click "Select the N students with missed due dates". "Message selected" opens the intervention composer with those students as recipients and the group message action already chosen. When every selected student has missed a due date, the composer uses the missed-work template, so `{missedwork}` lists each student's own missed activities. Intervention triggers can now preselect an action with `data-default-action`.
+- **Prior-course risk replaces the separate Early warning table.** The longitudinal early warnings from local_coifish appear as a "Prior-course risk" chip on the attention list. The same course setting (show longitudinal profiles) still controls it, and withdrawn students are left out (fixed in local_coifish 1.8.1).
+- **The risk quadrant and sociogram open in pop-ups.** They no longer take up the page; each has a card under "Explore class patterns" in the Understand section and is drawn when its pop-up first opens. The site settings that hide either chart still apply.
+- The summary chip "At risk" is now "Need attention", matching the list it counts.
+
 ## [2.13.1] - 2026-11-11
 
 ### Fixed

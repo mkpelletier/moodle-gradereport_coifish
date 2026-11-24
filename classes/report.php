@@ -6522,6 +6522,32 @@ class report extends \grade_report {
     }
 
     /**
+     * Moderate/high risk profiles carried over from previous courses, keyed by userid.
+     *
+     * Comes from local_coifish's longitudinal profiles when that plugin is installed
+     * and the course has not switched longitudinal profiles off. local_coifish only
+     * returns actively enrolled students, so withdrawals are excluded.
+     *
+     * @return array<int, array> Map of userid => formatted early-warning profile.
+     */
+    protected function get_prior_risk_map(): array {
+        if (!class_exists('\\local_coifish\\api')) {
+            return [];
+        }
+        $raw = get_config('gradereport_coifish', 'course_' . $this->courseid);
+        $coursesettings = $raw ? json_decode($raw, true) : [];
+        $override = $coursesettings['show_longitudinal'] ?? '';
+        if ($override !== '' && $override !== '1') {
+            return [];
+        }
+        $map = [];
+        foreach (\local_coifish\api::get_early_warnings($this->courseid) as $warning) {
+            $map[(int)$warning['userid']] = $warning;
+        }
+        return $map;
+    }
+
+    /**
      * Get cohort-level insights for the teacher summary view.
      *
      * Aggregates COI presence indicators, grade distribution, and risk diagnostics
@@ -7085,6 +7111,8 @@ class report extends \grade_report {
 
         // Missed-deadline + extension counts per student.
         $misseddata = $this->get_cohort_missed_deadlines($userids);
+        // Moderate/high risk profiles from previous courses, keyed by userid.
+        $priorrisk = $this->get_prior_risk_map();
         $missedstudents = []; // For the cohort diagnostic card.
         $extensionstudents = [];
 
@@ -7162,9 +7190,9 @@ class report extends \grade_report {
                 $lowisolation++;
                 if ($issilent) {
                     $silentlearners++;
-                    $flags[] = get_string('cohort_flag_silent', $component);
+                    $flags[] = ['kind' => 'presence', 'label' => get_string('cohort_flag_silent', $component)];
                 } else {
-                    $flags[] = get_string('cohort_flag_sp', $component);
+                    $flags[] = ['kind' => 'presence', 'label' => get_string('cohort_flag_sp', $component)];
                 }
                 $isolatedstudents[] = [
                     'userid' => $uid,
@@ -7202,7 +7230,7 @@ class report extends \grade_report {
                     ]))->out(false),
                 ];
                 $riskflags++;
-                $flags[] = get_string('cohort_flag_stale', $component, $daysinactive);
+                $flags[] = ['kind' => 'stale', 'label' => get_string('cohort_flag_stale', $component, $daysinactive)];
             }
 
             // Cognitive Presence — engagement rate.
@@ -7213,7 +7241,7 @@ class report extends \grade_report {
             if ($cplevel['level'] <= 1) {
                 $riskflags++;
                 $lowengagement++;
-                $flags[] = get_string('cohort_flag_cp', $component);
+                $flags[] = ['kind' => 'presence', 'label' => get_string('cohort_flag_cp', $component)];
                 $lowengagementstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
@@ -7235,7 +7263,7 @@ class report extends \grade_report {
             if (($fbtotal > 0 || $live['facilitatedavailable'] > 0) && $tplevel['level'] <= 1) {
                 $riskflags++;
                 $lowfeedback++;
-                $flags[] = get_string('cohort_flag_tp', $component);
+                $flags[] = ['kind' => 'presence', 'label' => get_string('cohort_flag_tp', $component)];
                 $tpmetric = $fbviewed . ' / ' . $fbtotal . ' (' . $fbrate . '%)';
                 if ($live['facilitatedavailable'] > 0) {
                     $tpmetric .= ' · ' . get_string('cohort_live_facilitated_label', $component, (object)[
@@ -7258,7 +7286,7 @@ class report extends \grade_report {
             if ($pct !== null && $pct < $passthreshold) {
                 $belowpass++;
                 $riskflags++;
-                $flags[] = get_string('cohort_flag_failing', $component);
+                $flags[] = ['kind' => 'failing', 'label' => get_string('cohort_flag_failing', $component, $pct)];
                 $belowpassstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
@@ -7274,7 +7302,16 @@ class report extends \grade_report {
             $extensionscount = (int)($misseddata[$uid]['extensions'] ?? 0);
             if ($missedcount >= 1) {
                 $riskflags++;
-                $flags[] = get_string('cohort_flag_missed', $component, $missedcount);
+                // Missed due dates lead the concern list: they are the most
+                // directly actionable signal (a message can still recover the work).
+                $missednames = $misseddata[$uid]['missedlistraw'] ?? [];
+                array_unshift($flags, [
+                    'kind' => 'missed',
+                    'label' => $missedcount === 1 && count($missednames) === 1
+                        ? get_string('cohort_flag_missed_one', $component, format_string(reset($missednames)))
+                        : get_string('cohort_flag_missed', $component, $missedcount),
+                    'detail' => implode(', ', array_map('format_string', $missednames)),
+                ]);
                 // The template escapes the metric, so use the plain (raw) names.
                 $missedstudents[] = [
                     'userid' => $uid,
@@ -7291,7 +7328,10 @@ class report extends \grade_report {
             // but contributes a flag when chronic).
             if ($extensionscount >= (int)$triggers['extensions_count']) {
                 $riskflags++;
-                $flags[] = get_string('cohort_flag_extensions', $component, $extensionscount);
+                $flags[] = [
+                    'kind' => 'extensions',
+                    'label' => get_string('cohort_flag_extensions', $component, $extensionscount),
+                ];
                 $extensionstudents[] = [
                     'userid' => $uid,
                     'fullname' => fullname($enrolledusers[$uid]),
@@ -7311,8 +7351,25 @@ class report extends \grade_report {
                 'posts' => $postcount,
             ];
 
-            // Collect at-risk students (2+ flags).
-            if ($riskflags >= 2) {
+            // Prior-course risk from the longitudinal profile (local_coifish).
+            $prior = $priorrisk[$uid] ?? null;
+            if ($prior) {
+                $riskflags++;
+                $details = array_filter(array_merge(
+                    [$prior['engagementpatternlabel'] ?? ''],
+                    $prior['riskfactors'] ?? []
+                ));
+                $flags[] = [
+                    'kind' => !empty($prior['isriskhigh']) ? 'priorhigh' : 'prior',
+                    'label' => get_string('cohort_flag_prior', $component, $prior['risklabel'] ?? ''),
+                    'detail' => implode(', ', $details),
+                ];
+            }
+
+            // A student needs attention with 2+ flags, or with any single flag that
+            // calls for contact on its own: a missed due date (the work can still
+            // be recovered) or a risk profile carried over from previous courses.
+            if ($riskflags >= 2 || $missedcount >= 1 || $prior) {
                 $groupnames = $usergroupnames[$uid] ?? '';
                 $atrisk[] = [
                     'userid' => $uid,
@@ -7330,7 +7387,10 @@ class report extends \grade_report {
                     'tplevel' => $tplevel['label'],
                     'tpclass' => $tplevel['class'],
                     'tplevel_raw' => (int)$tplevel['level'],
-                    'flaglist' => implode(', ', $flags),
+                    'flaglist' => implode(', ', array_column($flags, 'label')),
+                    'concerns' => array_map(function ($f) {
+                        return $f + ['detail' => ''];
+                    }, $flags),
                     'groupnames' => $groupnames,
                     'missedcount' => $missedcount,
                     'extensionscount' => $extensionscount,
@@ -7341,9 +7401,11 @@ class report extends \grade_report {
             }
         }
 
-        // Sort at-risk by risk flag count descending.
+        // Sort by urgency: students with missed due dates first (most missed
+        // first), then by number of concerns, then by name.
         usort($atrisk, function ($a, $b) {
-            return $b['riskflags'] - $a['riskflags'];
+            return [$b['missedcount'] > 0, $b['missedcount'], $b['riskflags'], $a['fullname']]
+                <=> [$a['missedcount'] > 0, $a['missedcount'], $a['riskflags'], $b['fullname']];
         });
 
         // Cap the rendered at-risk list so a very large cohort doesn't push
@@ -7356,6 +7418,11 @@ class report extends \grade_report {
             $atrisk = array_slice($atrisk, 0, self::ATRISK_RENDER_CAP);
         }
         $atriskcapped = $atrisktotal > count($atrisk);
+        // Students in the rendered list with a missed due date, for the
+        // "select everyone with missed due dates" shortcut.
+        $missedtotalstudents = count(array_filter($atrisk, function ($r) {
+            return $r['missedcount'] > 0;
+        }));
 
         // 4. Build presence breakdown for template.
         $presencelevels = ['none', 'emerging', 'developing', 'established', 'exemplary'];
@@ -8143,7 +8210,7 @@ class report extends \grade_report {
             ];
         }
         $stats[] = [
-            'label' => get_string('cohort_stat_atrisk', $component),
+            'label' => get_string('cohort_stat_attention', $component),
             'value' => (string)$atrisktotal,
             'isrisk' => $atrisktotal > 0,
         ];
@@ -8252,6 +8319,9 @@ class report extends \grade_report {
             'nocards' => empty($cards),
             'atrisk' => $atrisk,
             'hasatrisk' => !empty($atrisk),
+            'atrisktotal' => $atrisktotal,
+            'missedstudentcount' => $missedtotalstudents,
+            'hasmissedstudents' => $missedtotalstudents > 0,
             'atriskcapped' => $atriskcapped,
             'atriskcapnote' => $atriskcapped
                 ? get_string('cohort_atrisk_capped', $component, (object)[

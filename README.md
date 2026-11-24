@@ -17,11 +17,14 @@ A Moodle grade report plugin that combines learning analytics with the Community
 
 ### Teacher View
 - **Summary dashboard** — Overview of all students with course totals, drill-down, and group filtering.
-- **Cohort insights** — Diagnostic and prescriptive analytics cards identifying at-risk students with transparent methodology modals.
+- **Cohort insights** — Laid out in three tinted sections: *Act now*, *Watch* and *Understand*.
+  - **Students requiring attention** (Act now) — Students who missed a due date, carry a risk profile from previous courses (with local_coifish), or have two or more other concerns, shown as coloured concern chips with missed due dates first. Select students, or everyone with a missed due date, and message them in one step.
+  - **Class-wide patterns** (Watch) — Diagnostic and prescriptive analytics cards with transparent methodology modals.
+  - **Course health** (Understand) — Presence breakdowns, grade distribution, the chart pop-ups below and the cross-group comparison.
 - **Intervention tracking** — Record interventions directly from diagnostic cards with context-sensitive action options, then track whether they yield results over time via automated follow-up checks.
 - **Cross-group comparison** — Compare student outcomes and your own engagement metrics across your groups, with correlation diagnostics.
-- **S3 risk quadrant** — Scatter plot of engagement vs. grade based on the Student Success System model.
-- **Forum sociogram** — Force-directed graph of student reply networks coloured by academic performance.
+- **S3 risk quadrant** — Scatter plot of engagement vs. grade based on the Student Success System model, opened in a pop-up from Course health.
+- **Forum sociogram** — Force-directed graph of student reply networks coloured by academic performance, opened in a pop-up from Course health.
 - **Grade distribution** — Histogram with threshold markers.
 
 ### Coordinator View

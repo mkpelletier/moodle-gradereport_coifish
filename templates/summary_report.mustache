@@ -109,28 +109,24 @@
         {{#js}}
             require(['gradereport_coifish/riskquadrant', 'gradereport_coifish/sociogram'],
                 function(riskquadrant, sociogram) {
-                    function initCharts() {
-                        if (document.getElementById('gradetracker-riskquadrant') &&
-                            !document.getElementById('gradetracker-riskquadrant').hasAttribute('data-initialized')) {
-                            riskquadrant.init('gradetracker-riskquadrant');
-                            document.getElementById('gradetracker-riskquadrant').setAttribute('data-initialized', '1');
+                    // The charts live in pop-ups and size themselves from their
+                    // container, so draw each one the first time its pop-up is shown.
+                    [
+                        ['gradetracker-riskquadrant-modal', 'gradetracker-riskquadrant', riskquadrant],
+                        ['gradetracker-sociogram-modal', 'gradetracker-sociogram', sociogram]
+                    ].forEach(function(chart) {
+                        var modal = document.getElementById(chart[0]);
+                        if (!modal) {
+                            return;
                         }
-                        if (document.getElementById('gradetracker-sociogram') &&
-                            !document.getElementById('gradetracker-sociogram').hasAttribute('data-initialized')) {
-                            sociogram.init('gradetracker-sociogram');
-                            document.getElementById('gradetracker-sociogram').setAttribute('data-initialized', '1');
-                        }
-                    }
-                    var insightsView = document.getElementById('gradetracker-summary-insights-view');
-                    if (insightsView && !insightsView.classList.contains('d-none')) {
-                        initCharts();
-                    }
-                    var insightsBtn = document.getElementById('gradetracker-summary-insights-btn');
-                    if (insightsBtn) {
-                        insightsBtn.addEventListener('click', function() {
-                            setTimeout(initCharts, 50);
+                        modal.addEventListener('shown.bs.modal', function() {
+                            var el = document.getElementById(chart[1]);
+                            if (el && !el.hasAttribute('data-initialized')) {
+                                chart[2].init(chart[1]);
+                                el.setAttribute('data-initialized', '1');
+                            }
                         });
-                    }
+                    });
                 }
             );
         {{/js}}

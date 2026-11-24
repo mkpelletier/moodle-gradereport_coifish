@@ -75,12 +75,6 @@ class summary_report implements renderable, templatable {
             \gradereport_coifish\intervention_templates::get_all_for_client()
         );
 
-        // Course-level overrides live in the course_<id> JSON blob; the
-        // show_longitudinal gate below still reads from it directly.
-        $configkey = 'course_' . $this->report->courseid;
-        $raw = get_config('gradereport_coifish', $configkey);
-        $coursesettings = $raw ? json_decode($raw, true) : [];
-
         // Gate the insights tab via the shared resolver (course override → site
         // default) so this matches the student view and the course nav node.
         $data->showinsights = gradereport_coifish_insights_enabled($this->report->courseid);
@@ -108,18 +102,12 @@ class summary_report implements renderable, templatable {
                 $data->cohortinsights['showsociogram'] = !empty($data->cohortinsights['hassociogram']);
             }
 
-            // Longitudinal early warnings from local_coifish (if installed and enabled).
-            if (class_exists('\local_coifish\api')) {
-                $longioverride = $coursesettings['show_longitudinal'] ?? '';
-                $showlongitudinal = $longioverride !== '' ? ($longioverride === '1') : true;
-                if ($showlongitudinal) {
-                    $earlywarnings = \local_coifish\api::get_early_warnings($this->report->courseid);
-                    if (!empty($earlywarnings)) {
-                        $data->cohortinsights['earlywarnings'] = $earlywarnings;
-                        $data->cohortinsights['hasearlywarnings'] = true;
-                    }
-                }
-            }
+            $data->cohortinsights['showcharts'] = $data->cohortinsights['showscatter']
+                || $data->cohortinsights['showsociogram'];
+
+            // Prior-course risk (local_coifish early warnings) is folded into the
+            // "Students requiring attention" list as a concern by
+            // report::get_cohort_insights_data().
 
             // Preserve the active view across group/user changes.
             $data->defaultinsights = ($this->viewoverride === 'insights');

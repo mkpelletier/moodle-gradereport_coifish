@@ -796,6 +796,100 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
+     * A single missed due date is enough to put a student on the attention list,
+     * with the missed activity as the first concern, and those students come first.
+     */
+    public function test_attention_list_includes_single_missed_deadline(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $students = [];
+        for ($i = 0; $i < 4; $i++) {
+            $students[$i] = $generator->create_user();
+            $generator->enrol_user($students[$i]->id, $course->id, 'student');
+        }
+        $assign = $generator->create_module('assign', [
+            'course' => $course->id, 'name' => 'Essay 1', 'duedate' => time() - DAYSECS,
+        ]);
+        // Everyone submitted except student 0.
+        for ($i = 1; $i < 4; $i++) {
+            $DB->insert_record('assign_submission', (object)[
+                'assignment' => $assign->id, 'userid' => $students[$i]->id, 'status' => 'submitted',
+                'latest' => 1, 'attemptnumber' => 0, 'groupid' => 0,
+                'timecreated' => time(), 'timemodified' => time(),
+            ]);
+        }
+
+        $this->setUser($teacher);
+        $insights = $this->create_report($course, 0)->get_cohort_insights_data();
+
+        $this->assertTrue($insights['hasatrisk']);
+        $first = $insights['atrisk'][0];
+        $this->assertEquals($students[0]->id, $first['userid']);
+        $this->assertEquals(1, $first['missedcount']);
+        $this->assertEquals('missed', $first['concerns'][0]['kind']);
+        $this->assertEquals(
+            get_string('cohort_flag_missed_one', 'gradereport_coifish', 'Essay 1'),
+            $first['concerns'][0]['label']
+        );
+        $this->assertEquals('Essay 1', $first['concerns'][0]['detail']);
+        $this->assertEquals(1, $insights['missedstudentcount']);
+        $this->assertTrue($insights['hasmissedstudents']);
+        // Every concern has the keys the template reads.
+        foreach ($insights['atrisk'] as $row) {
+            foreach ($row['concerns'] as $concern) {
+                $this->assertArrayHasKey('kind', $concern);
+                $this->assertArrayHasKey('label', $concern);
+                $this->assertArrayHasKey('detail', $concern);
+            }
+        }
+    }
+
+    /**
+     * A risk profile from previous courses (local_coifish) shows as a concern and
+     * is enough on its own to list the student; withdrawn students are left out.
+     */
+    public function test_attention_list_includes_prior_course_risk(): void {
+        global $DB;
+        if (!class_exists('\\local_coifish\\api')) {
+            $this->markTestSkipped('local_coifish is required for prior-course risk profiles');
+        }
+        $this->resetAfterTest(true);
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $teacher = $generator->create_user();
+        $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $active = $generator->create_user();
+        $withdrawn = $generator->create_user();
+        $generator->enrol_user($active->id, $course->id, 'student');
+        $generator->enrol_user($withdrawn->id, $course->id, 'student', 'manual', 0, 0, ENROL_USER_SUSPENDED);
+
+        foreach ([$active, $withdrawn] as $user) {
+            $DB->insert_record('local_coifish_profile', (object)[
+                'userid' => $user->id, 'coursescompleted' => 2, 'coursesinprogress' => 1,
+                'avggrade' => 40, 'gradetrend' => 'declining', 'engagementpattern' => 'irregular',
+                'avgsocial' => 10, 'socialtrend' => 'declining', 'avgselfregulation' => 20,
+                'selfregtrend' => 'declining', 'avgfeedbackpct' => 10, 'totalinterventions' => 0,
+                'interventionsimproved' => 0, 'interventionresponse' => 'none', 'risklevel' => 'high',
+                'riskfactors' => json_encode([]), 'timemodified' => time(),
+            ]);
+        }
+
+        $this->setUser($teacher);
+        $atrisk = $this->create_report($course, 0)->get_cohort_insights_data()['atrisk'];
+        $rows = array_column($atrisk, null, 'userid');
+
+        $this->assertArrayHasKey($active->id, $rows);
+        $this->assertArrayNotHasKey($withdrawn->id, $rows);
+        $this->assertContains('priorhigh', array_column($rows[$active->id]['concerns'], 'kind'));
+    }
+
+    /**
      * Invoke a protected method on a report instance via reflection.
      *
      * @param report $report The report instance.
