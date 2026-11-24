@@ -41,6 +41,8 @@ const openModal = ($btn) => {
 
     $('#intv-diagnostictype').val(diagnostictype);
     $('#intv-scope').val(scope);
+    // The activity a missed-due-date card is about; 0 for everything else.
+    $('#intv-cmid').val(parseInt($btn.attr('data-cmid') || '0', 10) || 0);
     $('#intv-diagnostic-context').text(cardtitle);
     // Default template family for this card — overridden when the user picks
     // an action that declares its own data-tpl-family (e.g. feedback_reminder).
@@ -209,6 +211,16 @@ const refreshComposer = () => {
 };
 
 /**
+ * Let the page know an intervention was saved, so a missed-due-date card can
+ * show it was contacted without a reload.
+ *
+ * @param {number} cmid The activity the intervention was about, 0 if none.
+ */
+const notifySaved = (cmid) => {
+    document.dispatchEvent(new CustomEvent('gradereport_coifish:intervention-saved', {detail: {cmid: cmid}}));
+};
+
+/**
  * Submit the intervention via AJAX.
  *
  * Branches based on the selected action's data-kind: message and announcement
@@ -219,6 +231,7 @@ const submitIntervention = () => {
     const courseid = parseInt($('#intv-courseid').val(), 10);
     const diagnostictype = $('#intv-diagnostictype').val();
     const scope = $('#intv-scope').val();
+    const cmid = parseInt($('#intv-cmid').val() || '0', 10) || 0;
     const actiontype = $('#intv-actiontype').val();
     const customaction = $('#intv-customaction').val();
     const notes = $('#intv-notes').val();
@@ -274,10 +287,12 @@ const submitIntervention = () => {
                 actionkind: kind,
                 subject: subject,
                 body: body,
-                notes: notes
+                notes: notes,
+                cmid: cmid
             }
         }])[0].then((result) => {
             $modal.modal('hide');
+            notifySaved(cmid);
             const tmpl = kind === 'message'
                 ? ($modal.attr('data-msg-success-sent') || 'Sent and logged.')
                 : ($modal.attr('data-msg-success-posted') || 'Posted and logged.');
@@ -302,10 +317,12 @@ const submitIntervention = () => {
             scope: scope,
             actiontype: actiontype,
             customaction: customaction,
-            notes: notes
+            notes: notes,
+            cmid: cmid
         }
     }])[0].then((result) => {
         $modal.modal('hide');
+        notifySaved(cmid);
         Notification.addNotification({
             message: $modal.attr('data-msg-success') || 'Intervention logged successfully.',
             type: 'success'

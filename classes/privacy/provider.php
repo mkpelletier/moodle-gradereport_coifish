@@ -50,6 +50,7 @@ class provider implements
             'courseid' => 'privacy:metadata:intv:courseid',
             'teacherid' => 'privacy:metadata:intv:teacherid',
             'diagnostictype' => 'privacy:metadata:intv:diagnostictype',
+            'cmid' => 'privacy:metadata:intv:cmid',
             'scope' => 'privacy:metadata:intv:scope',
             'actiontype' => 'privacy:metadata:intv:actiontype',
             'customaction' => 'privacy:metadata:intv:customaction',
@@ -246,6 +247,7 @@ class provider implements
                     }
                     $exportdata[] = [
                         'diagnostictype' => $intv->diagnostictype,
+                        'cmid' => (int)$intv->cmid,
                         'scope' => $intv->scope,
                         'actiontype' => $intv->actiontype,
                         'customaction' => $intv->customaction,

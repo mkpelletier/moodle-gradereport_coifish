@@ -972,14 +972,10 @@ class report extends \grade_report {
      * Compute missed-deadline and extension counts per student for the cohort.
      *
      * "Missed" = the assessment's due date is in the past, the student has not
-     * submitted, and the student has neither a user override nor a group override
-     * on that item. Items where the student holds any override are excluded from
-     * "missed" entirely — they've been deliberately re-scoped for that student.
+     * submitted, and the student is not excused (see {@see classify_missed_work()}).
      *
      * Returns per-student missed counts plus a separate count of user-level
      * extensions (override rows) so chronic extension-seeking can be flagged.
-     * Covers Moodle's three deadline-bearing module types: assign (duedate),
-     * quiz (timeclose), forum (duedate on graded forums).
      *
      * @param int[] $userids Student user IDs.
      * @return array Map of userid => ['missed' => int, 'missedlist' => string[],
@@ -988,14 +984,35 @@ class report extends \grade_report {
      *               missedlistraw holds the plain names for plain-text consumers.
      */
     public function get_cohort_missed_deadlines(array $userids): array {
+        return $this->missed_per_student($this->classify_missed_work($userids), $userids);
+    }
+
+    /**
+     * Classify every student's standing on every past-due assessment.
+     *
+     * Covers Moodle's three deadline-bearing module types: assign (duedate),
+     * quiz (timeclose), forum (duedate on graded forums). Activities hidden from
+     * students are ignored. For each remaining activity a student is:
+     * - 'done' when they submitted / attempted / posted;
+     * - 'excused' when they hold a user override, one of their groups holds a
+     *   group override, or (assignments) they have an extension that has not
+     *   yet run out — the deadline has been deliberately re-scoped for them;
+     * - 'missed' otherwise.
+     *
+     * @param int[] $userids Student user IDs.
+     * @return array [
+     *     'items' => [modname => [instanceid => {name, due, cmid}]],
+     *     'status' => [modname => [instanceid => [userid => 'done'|'excused'|'missed']]],
+     *     'reason' => [modname => [instanceid => [userid => 'override'|'groupoverride'|'extension']]],
+     *     'extensions' => [userid => number of user override rows],
+     * ]
+     */
+    protected function classify_missed_work(array $userids): array {
         global $DB;
         $now = $this->effective_now();
-        $out = [];
-        foreach ($userids as $uid) {
-            $out[(int)$uid] = ['missed' => 0, 'missedlist' => [], 'missedlistraw' => [], 'extensions' => 0];
-        }
+        $state = ['items' => [], 'status' => [], 'reason' => [], 'extensions' => []];
         if (empty($userids)) {
-            return $out;
+            return $state;
         }
         [$uinsql, $uinparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'mdu');
 
@@ -1012,21 +1029,33 @@ class report extends \grade_report {
             $usergroupids[(int)$row->userid][] = (int)$row->groupid;
         }
 
-        // Module-by-module: gather past-due items, submission/attempt presence,
-        // user overrides, group overrides. Each branch builds a uniform shape
-        // [moduleinstanceid => name] of past-due items first.
+        // Past-due items per module, shaped [instanceid => {name, due}], then
+        // limited to activities students can see (and tagged with their cmid).
         $itemsbymod = [
             'assign' => $this->fetch_pastdue_assigns($now),
             'quiz' => $this->fetch_pastdue_quizzes($now),
             'forum' => $this->fetch_pastdue_forums($now),
         ];
+        $modinfo = get_fast_modinfo($this->courseid);
+        foreach ($itemsbymod as $modname => $items) {
+            $instances = $modinfo->get_instances_of($modname);
+            foreach ($items as $iid => $item) {
+                $cm = $instances[$iid] ?? null;
+                if (!$cm || !$cm->visible || !empty($cm->deletioninprogress)) {
+                    unset($itemsbymod[$modname][$iid]);
+                    continue;
+                }
+                $item->cmid = (int)$cm->id;
+            }
+        }
 
         // Per module, gather submissions / overrides — each keyed [modname][userid][instanceid]
         // (or [modname][groupid][instanceid] for group overrides) so per-student
-        // counting in the second pass is a constant-time lookup.
+        // classification below is a constant-time lookup.
         $haswork = [];
         $useroverrides = [];
         $groupoverrides = [];
+        $extended = [];
         $userextensions = [];
 
         foreach ($itemsbymod as $modname => $items) {
@@ -1057,6 +1086,15 @@ class report extends \grade_report {
                     } else if ($r->groupid) {
                         $groupoverrides['assign'][(int)$r->groupid][(int)$r->assignid] = true;
                     }
+                }
+                // Assignment extensions that have not run out yet.
+                $flagrows = $DB->get_records_sql(
+                    "SELECT id, assignment, userid FROM {assign_user_flags}
+                      WHERE assignment $iinsql AND userid $uinsql AND extensionduedate > :extnow",
+                    array_merge($iinparams, $uinparams, ['extnow' => $now])
+                );
+                foreach ($flagrows as $r) {
+                    $extended['assign'][(int)$r->userid][(int)$r->assignment] = true;
                 }
             } else if ($modname === 'quiz') {
                 $rows = $DB->get_records_sql(
@@ -1098,95 +1136,243 @@ class report extends \grade_report {
             }
         }
 
-        // Per-user counting.
-        foreach ($userids as $uid) {
-            $uid = (int)$uid;
-            $missed = 0;
-            $missedlist = [];
-            $missedlistraw = [];
-            foreach ($itemsbymod as $modname => $items) {
-                foreach ($items as $iid => $name) {
-                    // Skip if student already engaged.
+        foreach ($itemsbymod as $modname => $items) {
+            foreach ($items as $iid => $item) {
+                foreach ($userids as $uid) {
+                    $uid = (int)$uid;
+                    $reason = '';
                     if (!empty($haswork[$modname][$uid][$iid])) {
+                        $state['status'][$modname][$iid][$uid] = 'done';
                         continue;
                     }
-                    // Skip if student has a user override on this item.
                     if (!empty($useroverrides[$modname][$uid][$iid])) {
-                        continue;
-                    }
-                    // Skip if any of the student's groups has a group override.
-                    $skip = false;
-                    foreach ($usergroupids[$uid] ?? [] as $gid) {
-                        if (!empty($groupoverrides[$modname][$gid][$iid])) {
-                            $skip = true;
-                            break;
+                        $reason = 'override';
+                    } else if (!empty($extended[$modname][$uid][$iid])) {
+                        $reason = 'extension';
+                    } else {
+                        foreach ($usergroupids[$uid] ?? [] as $gid) {
+                            if (!empty($groupoverrides[$modname][$gid][$iid])) {
+                                $reason = 'groupoverride';
+                                break;
+                            }
                         }
                     }
-                    if ($skip) {
+                    if ($reason !== '') {
+                        $state['status'][$modname][$iid][$uid] = 'excused';
+                        $state['reason'][$modname][$iid][$uid] = $reason;
+                    } else {
+                        $state['status'][$modname][$iid][$uid] = 'missed';
+                    }
+                }
+            }
+        }
+
+        $state['items'] = $itemsbymod;
+        foreach ($userextensions as $uid => $rows) {
+            $state['extensions'][$uid] = count($rows);
+        }
+        return $state;
+    }
+
+    /**
+     * Per-student view of {@see classify_missed_work()}.
+     *
+     * @param array $state Result of classify_missed_work().
+     * @param int[] $userids Student user IDs.
+     * @return array Map of userid => ['missed', 'missedlist', 'missedlistraw', 'extensions'].
+     */
+    protected function missed_per_student(array $state, array $userids): array {
+        $out = [];
+        foreach ($userids as $uid) {
+            $uid = (int)$uid;
+            $missedlist = [];
+            $missedlistraw = [];
+            foreach ($state['items'] as $modname => $items) {
+                foreach ($items as $iid => $item) {
+                    if (($state['status'][$modname][$iid][$uid] ?? '') !== 'missed') {
                         continue;
                     }
-                    $missed++;
                     // The missedlist field is format_string'd for HTML display;
                     // missedlistraw keeps the plain activity name for plain-text
                     // consumers such as the {missedwork} message placeholder, which
                     // gets escaped once by the messaging channel (double-escaping
                     // plain names would surface entities like "&amp;" in the message).
-                    $missedlist[] = format_string($name);
-                    $missedlistraw[] = $name;
+                    $missedlist[] = format_string($item->name);
+                    $missedlistraw[] = $item->name;
                 }
             }
             $out[$uid] = [
-                'missed' => $missed,
+                'missed' => count($missedlistraw),
                 'missedlist' => $missedlist,
                 'missedlistraw' => $missedlistraw,
-                'extensions' => isset($userextensions[$uid]) ? count($userextensions[$uid]) : 0,
+                'extensions' => $state['extensions'][$uid] ?? 0,
             ];
         }
         return $out;
     }
 
     /**
-     * Return [assignid => name] for assignments past their due date.
+     * Per-activity view of {@see classify_missed_work()} for the "Missed due dates" cards.
+     *
+     * Only activities with at least one student still missing are returned,
+     * newest due date first. Each carries the students to message, who was
+     * excused and why, a done / excused / missing breakdown, and when a teacher
+     * last sent an intervention about that activity.
+     *
+     * @param array $state Result of classify_missed_work().
+     * @param array $users Map of userid => user record (needs name fields).
+     * @return array List of activity entries ready for the template.
+     */
+    protected function missed_per_activity(array $state, array $users): array {
+        global $DB;
+        $component = 'gradereport_coifish';
+        $now = $this->effective_now();
+        $icons = ['assign' => 'file-text-o', 'quiz' => 'check-square-o', 'forum' => 'comments-o'];
+        $modinfo = get_fast_modinfo($this->courseid);
+
+        $activities = [];
+        foreach ($state['items'] as $modname => $items) {
+            foreach ($items as $iid => $item) {
+                $statuses = $state['status'][$modname][$iid] ?? [];
+                $counts = array_count_values($statuses) + ['done' => 0, 'excused' => 0, 'missed' => 0];
+                if ($counts['missed'] === 0) {
+                    continue;
+                }
+                $students = [];
+                $sjson = [];
+                $excused = [];
+                foreach ($statuses as $uid => $status) {
+                    if (!isset($users[$uid])) {
+                        continue;
+                    }
+                    $name = fullname($users[$uid]);
+                    if ($status === 'missed') {
+                        $students[] = [
+                            'userid' => $uid,
+                            'fullname' => $name,
+                            'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
+                                'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
+                            ]))->out(false),
+                        ];
+                        $sjson[] = ['id' => $uid, 'name' => $name];
+                    } else if ($status === 'excused') {
+                        $reason = $state['reason'][$modname][$iid][$uid] ?? 'override';
+                        $excused[] = get_string('missed_excused_' . $reason, $component, $name);
+                    }
+                }
+                usort($students, function ($a, $b) {
+                    return strcmp($a['fullname'], $b['fullname']);
+                });
+                $total = max(1, array_sum($counts));
+                $daysago = (int)floor(max(0, $now - (int)$item->due) / DAYSECS);
+                if ($daysago === 0) {
+                    $agostr = get_string('missed_activity_today', $component);
+                } else if ($daysago === 1) {
+                    $agostr = get_string('missed_activity_yesterday', $component);
+                } else {
+                    $agostr = get_string('missed_activity_daysago', $component, $daysago);
+                }
+                $cm = $modinfo->get_cm($item->cmid);
+                $activities[] = [
+                    'cmid' => $item->cmid,
+                    'modname' => $modname,
+                    'icon' => $icons[$modname],
+                    // Unescaped here; Mustache escapes it once.
+                    'name' => format_string($item->name, true, ['escape' => false]),
+                    'url' => $cm->url ? $cm->url->out(false) : '',
+                    'due' => (int)$item->due,
+                    'daysago' => $daysago,
+                    'isrecent' => $daysago <= 14,
+                    'closedstr' => get_string(
+                        'missed_activity_closed',
+                        $component,
+                        userdate((int)$item->due, get_string('strftimedatetimeshort', 'langconfig'))
+                    ),
+                    'agostr' => $agostr,
+                    'missingcount' => $counts['missed'],
+                    'missinglabel' => get_string('missed_activity_missing_' . $modname, $component, $counts['missed']),
+                    'donelabel' => get_string('missed_activity_done', $component, $counts['done']),
+                    'excusedcount' => $counts['excused'],
+                    'excusedlabel' => get_string('missed_activity_excused', $component, $counts['excused']),
+                    'missinglegend' => get_string('missed_activity_missing', $component, $counts['missed']),
+                    'donepct' => round($counts['done'] / $total * 100, 1),
+                    'excusedpct' => round($counts['excused'] / $total * 100, 1),
+                    'missingpct' => round($counts['missed'] / $total * 100, 1),
+                    'students' => $students,
+                    'studentsjson' => json_encode($sjson),
+                    'hasexcused' => !empty($excused),
+                    'notcounted' => !empty($excused)
+                        ? get_string('missed_activity_notcounted', $component, implode(', ', $excused))
+                        : '',
+                    'lastcontact' => 0,
+                ];
+            }
+        }
+        if (empty($activities)) {
+            return [];
+        }
+
+        // When a teacher last sent or logged an intervention about each activity.
+        [$cinsql, $cinparams] = $DB->get_in_or_equal(array_column($activities, 'cmid'), SQL_PARAMS_NAMED, 'mcm');
+        $lastcontact = $DB->get_records_sql_menu(
+            "SELECT cmid, MAX(timecreated)
+               FROM {gradereport_coifish_intv}
+              WHERE courseid = :cid AND cmid $cinsql
+           GROUP BY cmid",
+            array_merge(['cid' => $this->courseid], $cinparams)
+        );
+        foreach ($activities as &$activity) {
+            $when = (int)($lastcontact[$activity['cmid']] ?? 0);
+            $activity['lastcontact'] = $when;
+            $activity['contacted'] = $when > 0;
+            $whenstr = userdate($when, get_string('strftimedateshort', 'langconfig'));
+            $activity['contactlabel'] = $when > 0
+                ? get_string('missed_activity_contacted', $component, $whenstr)
+                : get_string('missed_activity_notcontacted', $component);
+            $activity['buttonlabel'] = $when > 0
+                ? get_string('missed_activity_follow_up', $component, $activity['missingcount'])
+                : get_string('missed_activity_message_all', $component, $activity['missingcount']);
+        }
+        unset($activity);
+
+        usort($activities, function ($a, $b) {
+            return $b['due'] <=> $a['due'];
+        });
+        return $activities;
+    }
+
+    /**
+     * Return [assignid => {name, due}] for assignments past their due date.
      *
      * @param int $now Effective current timestamp.
      * @return array
      */
     protected function fetch_pastdue_assigns(int $now): array {
         global $DB;
-        $rows = $DB->get_records_sql(
-            "SELECT id, name FROM {assign}
+        return $DB->get_records_sql(
+            "SELECT id, name, duedate AS due FROM {assign}
               WHERE course = :cid AND duedate > 0 AND duedate < :now",
             ['cid' => $this->courseid, 'now' => $now]
         );
-        $out = [];
-        foreach ($rows as $r) {
-            $out[(int)$r->id] = $r->name;
-        }
-        return $out;
     }
 
     /**
-     * Return [quizid => name] for quizzes past their close time.
+     * Return [quizid => {name, due}] for quizzes past their close time.
      *
      * @param int $now Effective current timestamp.
      * @return array
      */
     protected function fetch_pastdue_quizzes(int $now): array {
         global $DB;
-        $rows = $DB->get_records_sql(
-            "SELECT id, name FROM {quiz}
+        return $DB->get_records_sql(
+            "SELECT id, name, timeclose AS due FROM {quiz}
               WHERE course = :cid AND timeclose > 0 AND timeclose < :now",
             ['cid' => $this->courseid, 'now' => $now]
         );
-        $out = [];
-        foreach ($rows as $r) {
-            $out[(int)$r->id] = $r->name;
-        }
-        return $out;
     }
 
     /**
-     * Return [forumid => name] for graded forums past their due date.
+     * Return [forumid => {name, due}] for graded forums past their due date.
      *
      * Only forums with a positive duedate are considered — purely discussion
      * forums without deadlines are not relevant to the missed-deadline metric.
@@ -1196,16 +1382,11 @@ class report extends \grade_report {
      */
     protected function fetch_pastdue_forums(int $now): array {
         global $DB;
-        $rows = $DB->get_records_sql(
-            "SELECT id, name FROM {forum}
+        return $DB->get_records_sql(
+            "SELECT id, name, duedate AS due FROM {forum}
               WHERE course = :cid AND duedate > 0 AND duedate < :now",
             ['cid' => $this->courseid, 'now' => $now]
         );
-        $out = [];
-        foreach ($rows as $r) {
-            $out[(int)$r->id] = $r->name;
-        }
-        return $out;
     }
 
     /**
@@ -5116,9 +5297,6 @@ class report extends \grade_report {
             'stale_count' => 3,
             'stale_pct' => 20,
             'failing' => 20,
-            // Missed-deadline triggers — counts at the cohort level.
-            'missed_count' => 3,
-            'missed_pct' => 15,
             // Frequent-extension trigger — user-level overrides per student.
             'extensions_count' => 3,
         ];
@@ -5130,8 +5308,6 @@ class report extends \grade_report {
             $triggers['stale_count'] = 2;
             $triggers['stale_pct'] = 15;
             $triggers['failing'] = 15;
-            $triggers['missed_count'] = 2;
-            $triggers['missed_pct'] = 10;
             $triggers['extensions_count'] = 2;
         } else if ($sensitivity === 'low') {
             // Higher thresholds = less sensitive.
@@ -5141,8 +5317,6 @@ class report extends \grade_report {
             $triggers['stale_count'] = 5;
             $triggers['stale_pct'] = 30;
             $triggers['failing'] = 30;
-            $triggers['missed_count'] = 5;
-            $triggers['missed_pct'] = 25;
             $triggers['extensions_count'] = 5;
         }
         return $triggers;
@@ -7110,11 +7284,13 @@ class report extends \grade_report {
         // so the at-risk table can show which tutorial/marking group each student belongs to.
         $usergroupnames = $this->get_cohort_group_names($userids);
 
-        // Missed-deadline + extension counts per student.
-        $misseddata = $this->get_cohort_missed_deadlines($userids);
+        // Missed deadlines: one classification pass feeds both the per-student
+        // counts (attention list) and the per-activity cards (Act now).
+        $missedstate = $this->classify_missed_work($userids);
+        $misseddata = $this->missed_per_student($missedstate, $userids);
+        $missedactivities = $this->missed_per_activity($missedstate, $enrolledusers);
         // Moderate/high risk profiles from previous courses, keyed by userid.
         $priorrisk = $this->get_prior_risk_map();
-        $missedstudents = []; // For the cohort diagnostic card.
         $extensionstudents = [];
 
         // Social-presence composite sub-weights (admin-configurable, with course
@@ -7305,25 +7481,17 @@ class report extends \grade_report {
                 $riskflags++;
                 // Missed due dates lead the concern list: they are the most
                 // directly actionable signal (a message can still recover the work).
-                $missednames = $misseddata[$uid]['missedlistraw'] ?? [];
+                // Unescaped names: Mustache escapes the label and tooltip once.
+                $missednames = array_map(function ($n) {
+                    return format_string($n, true, ['escape' => false]);
+                }, $misseddata[$uid]['missedlistraw'] ?? []);
                 array_unshift($flags, [
                     'kind' => 'missed',
                     'label' => $missedcount === 1 && count($missednames) === 1
-                        ? get_string('cohort_flag_missed_one', $component, format_string(reset($missednames)))
+                        ? get_string('cohort_flag_missed_one', $component, reset($missednames))
                         : get_string('cohort_flag_missed', $component, $missedcount),
-                    'detail' => implode(', ', array_map('format_string', $missednames)),
+                    'detail' => implode(', ', $missednames),
                 ]);
-                // The template escapes the metric, so use the plain (raw) names.
-                $missedstudents[] = [
-                    'userid' => $uid,
-                    'fullname' => fullname($enrolledusers[$uid]),
-                    'missedcount' => $missedcount,
-                    'metric' => $missedcount . ': ' . implode(', ', $misseddata[$uid]['missedlistraw'] ?? []),
-                    'missedlist' => $misseddata[$uid]['missedlist'] ?? [],
-                    'viewurl' => (new \moodle_url('/grade/report/coifish/index.php', [
-                        'id' => $this->courseid, 'userid' => $uid, 'view' => 'insights',
-                    ]))->out(false),
-                ];
             }
             // Frequent extensions — secondary risk signal (doesn't push to at-risk on its own,
             // but contributes a flag when chronic).
@@ -7419,6 +7587,14 @@ class report extends \grade_report {
             $atrisk = array_slice($atrisk, 0, self::ATRISK_RENDER_CAP);
         }
         $atriskcapped = $atrisktotal > count($atrisk);
+        // Missed-activity cards: the last 14 days up front, older ones folded away.
+        $recentactivities = array_values(array_filter($missedactivities, function ($a) {
+            return $a['isrecent'];
+        }));
+        $olderactivities = array_values(array_filter($missedactivities, function ($a) {
+            return !$a['isrecent'];
+        }));
+
         // Students in the rendered list with a missed due date, for the
         // "select everyone with missed due dates" shortcut.
         $missedtotalstudents = count(array_filter($atrisk, function ($r) {
@@ -7943,62 +8119,6 @@ class report extends \grade_report {
             ], $detail);
         }
 
-        // Missed deadlines — overdue, unsubmitted, no override exception. Shown
-        // whenever any student has missed work, since each one is actionable;
-        // the cohort triggers only escalate it to high priority.
-        $missedaffected = count($missedstudents);
-        $missedpct = $usercount > 0 ? round(($missedaffected / $usercount) * 100) : 0;
-        $missedtriggered = ($missedaffected >= (int)$triggers['missed_count'])
-            || ($missedpct >= (int)$triggers['missed_pct']);
-        if ($missedaffected > 0) {
-            $missedtotal = 0;
-            foreach ($missedstudents as $m) {
-                $missedtotal += (int)$m['missedcount'];
-            }
-            $missednames = array_column(array_slice($missedstudents, 0, 5), 'fullname');
-            $missednamelist = implode(', ', $missednames);
-            if ($missedaffected > 5) {
-                $missednamelist .= ' ' . get_string('cohort_and_others', $component, $missedaffected - 5);
-            }
-            $detail = $builddetail(
-                [
-                    ['label' => get_string('detail_metric_cohortsize', $component), 'value' => (string)$usercount],
-                    [
-                        'label' => get_string('detail_metric_affected', $component),
-                        'value' => $missedaffected . ' (' . $missedpct . '%)',
-                    ],
-                    [
-                        'label' => get_string('detail_metric_missed_total', $component),
-                        'value' => (string)$missedtotal,
-                    ],
-                ],
-                [
-                    [
-                        'label' => get_string('detail_threshold_trigger', $component),
-                        'value' => get_string('detail_threshold_missed_trigger', $component, (object)[
-                            'count' => $triggers['missed_count'], 'pct' => $triggers['missed_pct'],
-                        ]),
-                    ],
-                ],
-                $missedstudents,
-                'detail_method_missed',
-                'detail_rationale_missed'
-            );
-            // Put it first: missed work is the most immediately actionable signal.
-            array_unshift($cards, array_merge([
-                'icon' => 'calendar-times-o',
-                'diagnostictype' => 'cohort_missed',
-                'severity' => ($missedtriggered || $missedpct >= 30) ? 'danger' : 'warning',
-                'title' => get_string('cohort_card_missed_title', $component),
-                'diagnostic' => get_string('cohort_card_missed_diagnostic', $component, (object)[
-                    'count' => $missedaffected, 'percent' => $missedpct, 'total' => $missedtotal,
-                ]),
-                'action' => get_string('cohort_card_missed_action', $component, (object)[
-                    'count' => $missedaffected, 'names' => $missednamelist,
-                ]),
-            ], $detail));
-        }
-
         // Frequent extensions — chronic over-reliance on deadline overrides.
         $extaffected = count($extensionstudents);
         if ($extaffected >= 1) {
@@ -8321,6 +8441,11 @@ class report extends \grade_report {
             'atrisk' => $atrisk,
             'hasatrisk' => !empty($atrisk),
             'atrisktotal' => $atrisktotal,
+            'missedactivities' => $recentactivities,
+            'olderactivities' => $olderactivities,
+            'hasolderactivities' => !empty($olderactivities),
+            'olderactivitiescount' => count($olderactivities),
+            'hasmissedactivities' => !empty($missedactivities),
             'missedstudentcount' => $missedtotalstudents,
             'hasmissedstudents' => $missedtotalstudents > 0,
             'atriskcapped' => $atriskcapped,

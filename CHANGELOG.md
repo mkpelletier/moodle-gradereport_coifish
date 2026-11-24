@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.15.0] - 2026-11-24
+
+The second step of the All participants redesign: missed due dates, one activity at a time.
+
+### Added
+- **Missed due dates, by activity.** The *Act now* section now has one card per assignment, quiz or graded forum whose due date has passed with work still missing, newest first. Each card shows when it closed, how many students did not submit / attempt / post, a done / excused / missing bar, and the students (under "Students"), plus who was not counted and why (user override, group override or extension). Activities that closed more than 14 days ago are folded under "N older activities".
+- **"Message all N" for an activity.** Opens the composer on the group message action with that activity's missing students as recipients and a new *deadline* template. Three new placeholders are filled in when the message is sent: `{activityname}`, `{duedate}` and `{activitylink}`. They also work in announcements and record-only interventions logged from the card.
+- **Contact tracking per activity.** Interventions now record which activity they were about (new `cmid` column on `gradereport_coifish_intv`, with an upgrade step and privacy metadata). A card shows "Not contacted" or "Messaged <date>", and once contacted its button becomes "Follow up with N". The card updates as soon as a message is sent, without reloading.
+- The `log_intervention` and `dispatch_intervention` web services take an optional `cmid`, which must belong to the course.
+
+### Changed
+- **Section order now matches the agreed design.** *Act now* holds the missed due date cards; *Watch* holds "Students requiring attention"; *Understand* holds the class-wide diagnostic cards ("Class-wide patterns") followed by course health.
+- **The cohort "Missed deadlines" diagnostic card is removed.** The activity cards replace it. Its sensitivity triggers and strings are removed with it.
+- **Missed-deadline counting skips activities hidden from students, and counts students with an assignment extension that has not run out as excused.** Both previously counted as missed, in the cards, the attention list and the `{missedwork}` placeholder alike. The per-student and per-activity views now come from one shared calculation (`report::classify_missed_work()`).
+
+### Fixed
+- **A duplicated wrapper `<div>` in the insights view (2.14.0)** left an unclosed element around the whole page. Browsers recovered silently, so nothing looked wrong.
+- **Activity names with characters such as `&` were double-escaped** in the "Missed …" concern chip and its tooltip (2.14.0).
+
 ## [2.14.0] - 2026-11-24
 
 The first step of the All participants redesign: the insights view is reorganised around what a teacher should do this week.

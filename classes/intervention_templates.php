@@ -44,6 +44,8 @@ class intervention_templates {
         // Outstanding / missed work.
         'cohort_missed' => 'missing',
         'missed_deadlines' => 'missing',
+        // One activity's missed due date ({activityname}, {duedate}, {activitylink}).
+        'missed_activity' => 'deadline',
         // Low engagement, isolation, peer disconnect.
         'cohort_engagement' => 'engagement',
         'engagement_low' => 'engagement',
@@ -76,7 +78,7 @@ class intervention_templates {
      * Template families. Order matters for the JSON map sent to the modal.
      */
     public const FAMILIES = [
-        'generic', 'missing', 'engagement', 'stale', 'feedback',
+        'generic', 'missing', 'deadline', 'engagement', 'stale', 'feedback',
         'performance', 'selfreg', 'timing', 'extensions',
     ];
 

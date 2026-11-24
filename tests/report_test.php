@@ -694,41 +694,137 @@ final class report_test extends \advanced_testcase {
     }
 
     /**
-     * A single student missing a deadline surfaces the cohort missed-deadlines card, first.
+     * Build a course with a teacher, students and one past-due assignment that
+     * everyone except the first $missing students submitted.
+     *
+     * @param int $students Number of students.
+     * @param int $missing How many (from the start of the list) did not submit.
+     * @param array $assignoptions Extra module options.
+     * @return array [course, teacher, students[], assign]
      */
-    public function test_cohort_missed_card_shown_for_single_student(): void {
+    protected function make_missed_assignment(int $students, int $missing, array $assignoptions = []): array {
         global $DB;
-        $this->resetAfterTest(true);
-
         $generator = $this->getDataGenerator();
         $course = $generator->create_course();
         $teacher = $generator->create_user();
         $generator->enrol_user($teacher->id, $course->id, 'editingteacher');
-        $students = [];
-        for ($i = 0; $i < 10; $i++) {
-            $students[$i] = $generator->create_user();
-            $generator->enrol_user($students[$i]->id, $course->id, 'student');
+        $users = [];
+        for ($i = 0; $i < $students; $i++) {
+            $users[$i] = $generator->create_user(['firstname' => 'Student', 'lastname' => chr(65 + $i)]);
+            $generator->enrol_user($users[$i]->id, $course->id, 'student');
         }
-        $assign = $generator->create_module('assign', [
-            'course' => $course->id, 'name' => 'Essay 1', 'duedate' => time() - DAYSECS,
+        $assign = $generator->create_module('assign', $assignoptions + [
+            'course' => $course->id, 'name' => 'Essay 1', 'duedate' => time() - 2 * DAYSECS,
         ]);
-        // Everyone submitted except student 0.
-        for ($i = 1; $i < 10; $i++) {
+        for ($i = $missing; $i < $students; $i++) {
             $DB->insert_record('assign_submission', (object)[
-                'assignment' => $assign->id, 'userid' => $students[$i]->id, 'status' => 'submitted',
+                'assignment' => $assign->id, 'userid' => $users[$i]->id, 'status' => 'submitted',
                 'latest' => 1, 'attemptnumber' => 0, 'groupid' => 0,
                 'timecreated' => time(), 'timemodified' => time(),
             ]);
         }
+        return [$course, $teacher, $users, $assign];
+    }
+
+    /**
+     * A missed assignment becomes one "Missed due dates" card listing the
+     * students to message; the old cohort-level card is gone.
+     */
+    public function test_missed_activity_card(): void {
+        $this->resetAfterTest(true);
+        [$course, $teacher, $students, $assign] = $this->make_missed_assignment(5, 2);
 
         $this->setUser($teacher);
-        $cards = $this->create_report($course, 0)->get_cohort_insights_data()['cards'];
+        $insights = $this->create_report($course, 0)->get_cohort_insights_data();
 
-        $this->assertEquals('cohort_missed', $cards[0]['diagnostictype']);
-        $this->assertCount(1, $cards[0]['students']);
-        $this->assertEquals($students[0]->id, $cards[0]['students'][0]['userid']);
-        $this->assertEquals('1: Essay 1', $cards[0]['students'][0]['metric']);
-        $this->assertStringContainsString(fullname($students[0]), $cards[0]['action']);
+        $this->assertTrue($insights['hasmissedactivities']);
+        $this->assertCount(1, $insights['missedactivities']);
+        $card = $insights['missedactivities'][0];
+        $this->assertEquals($assign->cmid, $card['cmid']);
+        $this->assertEquals('Essay 1', $card['name']);
+        $this->assertEquals(2, $card['missingcount']);
+        $this->assertEquals(2, $card['daysago']);
+        $this->assertFalse($card['contacted']);
+        $this->assertEquals(
+            [$students[0]->id, $students[1]->id],
+            array_column($card['students'], 'userid')
+        );
+        $this->assertEquals(
+            [['id' => (int)$students[0]->id, 'name' => fullname($students[0])],
+             ['id' => (int)$students[1]->id, 'name' => fullname($students[1])]],
+            json_decode($card['studentsjson'], true)
+        );
+        $this->assertNull($this->find_card($insights['cards'], 'cohort_missed'));
+    }
+
+    /**
+     * Students on a user override or an unexpired assignment extension are
+     * excused, not missing; an expired extension still counts as missed.
+     */
+    public function test_missed_activity_excuses_overrides_and_extensions(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        [$course, $teacher, $students, $assign] = $this->make_missed_assignment(4, 4);
+
+        $DB->insert_record('assign_overrides', (object)[
+            'assignid' => $assign->id, 'userid' => $students[0]->id, 'duedate' => time() + DAYSECS,
+        ]);
+        $DB->insert_record('assign_user_flags', (object)[
+            'assignment' => $assign->id, 'userid' => $students[1]->id,
+            'extensionduedate' => time() + DAYSECS, 'locked' => 0, 'mailed' => 0,
+        ]);
+        $DB->insert_record('assign_user_flags', (object)[
+            'assignment' => $assign->id, 'userid' => $students[2]->id,
+            'extensionduedate' => time() - 3600, 'locked' => 0, 'mailed' => 0,
+        ]);
+
+        $this->setUser($teacher);
+        $card = $this->create_report($course, 0)->get_cohort_insights_data()['missedactivities'][0];
+
+        $this->assertEquals([$students[2]->id, $students[3]->id], array_column($card['students'], 'userid'));
+        $this->assertEquals(2, $card['excusedcount']);
+        $this->assertStringContainsString(
+            get_string('missed_excused_override', 'gradereport_coifish', fullname($students[0])),
+            $card['notcounted']
+        );
+        $this->assertStringContainsString(
+            get_string('missed_excused_extension', 'gradereport_coifish', fullname($students[1])),
+            $card['notcounted']
+        );
+    }
+
+    /**
+     * Activities hidden from students are not reported as missed.
+     */
+    public function test_missed_activity_ignores_hidden_activities(): void {
+        $this->resetAfterTest(true);
+        [$course, $teacher] = $this->make_missed_assignment(3, 3, ['visible' => 0]);
+
+        $this->setUser($teacher);
+        $insights = $this->create_report($course, 0)->get_cohort_insights_data();
+        $this->assertFalse($insights['hasmissedactivities']);
+        $this->assertFalse($insights['hasmissedstudents']);
+    }
+
+    /**
+     * Once an intervention about the activity is logged, the card shows when.
+     */
+    public function test_missed_activity_shows_last_contact(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        [$course, $teacher, , $assign] = $this->make_missed_assignment(3, 1);
+        $when = time() - DAYSECS;
+        $DB->insert_record('gradereport_coifish_intv', (object)[
+            'courseid' => $course->id, 'teacherid' => $teacher->id, 'diagnostictype' => 'missed_activity',
+            'cmid' => $assign->cmid, 'scope' => 'cohort', 'actiontype' => 'message_group',
+            'timecreated' => $when,
+        ]);
+
+        $this->setUser($teacher);
+        $card = $this->create_report($course, 0)->get_cohort_insights_data()['missedactivities'][0];
+        $this->assertTrue($card['contacted']);
+        $this->assertEquals($when, $card['lastcontact']);
+        $this->assertEquals(get_string('missed_activity_follow_up', 'gradereport_coifish', 1), $card['buttonlabel']);
     }
 
     /**

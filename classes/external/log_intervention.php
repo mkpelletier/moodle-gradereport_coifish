@@ -50,6 +50,7 @@ class log_intervention extends external_api {
             'actiontype' => new external_value(PARAM_ALPHANUMEXT, 'Preset action type key'),
             'customaction' => new external_value(PARAM_TEXT, 'Custom action text', VALUE_DEFAULT, ''),
             'notes' => new external_value(PARAM_TEXT, 'Optional notes', VALUE_DEFAULT, ''),
+            'cmid' => new external_value(PARAM_INT, 'Course module the intervention is about, 0 if none', VALUE_DEFAULT, 0),
         ]);
     }
 
@@ -63,6 +64,7 @@ class log_intervention extends external_api {
      * @param string $actiontype
      * @param string $customaction
      * @param string $notes
+     * @param int $cmid
      * @return array
      */
     public static function execute(
@@ -72,7 +74,8 @@ class log_intervention extends external_api {
         string $scope,
         string $actiontype,
         string $customaction = '',
-        string $notes = ''
+        string $notes = '',
+        int $cmid = 0
     ): array {
         global $DB, $USER;
 
@@ -84,11 +87,13 @@ class log_intervention extends external_api {
             'actiontype' => $actiontype,
             'customaction' => $customaction,
             'notes' => $notes,
+            'cmid' => $cmid,
         ]);
 
         $context = \context_course::instance($params['courseid']);
         self::validate_context($context);
         require_capability('gradereport/coifish:intervene', $context);
+        self::validate_cmid($params['courseid'], $params['cmid']);
 
         $now = time();
 
@@ -97,6 +102,7 @@ class log_intervention extends external_api {
             'courseid' => $params['courseid'],
             'teacherid' => $USER->id,
             'diagnostictype' => $params['diagnostictype'],
+            'cmid' => $params['cmid'],
             'scope' => $params['scope'],
             'actiontype' => $params['actiontype'],
             'customaction' => $params['customaction'] ?: null,
@@ -133,6 +139,20 @@ class log_intervention extends external_api {
             'interventionid' => (int)$interventionid,
             'students' => $studentrecords,
         ];
+    }
+
+    /**
+     * Check that a course module id (when given) belongs to the course.
+     *
+     * @param int $courseid
+     * @param int $cmid 0 when the intervention is not about one activity.
+     * @throws \invalid_parameter_exception
+     */
+    public static function validate_cmid(int $courseid, int $cmid): void {
+        global $DB;
+        if ($cmid > 0 && !$DB->record_exists('course_modules', ['id' => $cmid, 'course' => $courseid])) {
+            throw new \invalid_parameter_exception('cmid does not belong to this course');
+        }
     }
 
     /**

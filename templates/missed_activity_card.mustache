@@ -1,0 +1,125 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template gradereport_coifish/missed_activity_card
+
+    One activity whose due date has passed with work still missing, in the
+    "Act now" band of the All participants insights view. "Message all" opens
+    the intervention composer (intervention.js) on the deadline template with
+    the missing students as recipients and the activity's cmid attached.
+
+    Context variables required for this template:
+    * cmid (int) - Course module ID.
+    * icon (string) - FontAwesome icon name for the module type.
+    * name (string) - Activity name.
+    * url (string) - Link to the activity.
+    * closedstr (string) - "Closed <date>".
+    * agostr (string) - "2 days ago", "yesterday", ...
+    * missingcount (int) - Students still missing.
+    * missinglabel (string) - "7 did not attempt".
+    * contacted (bool) - Whether an intervention about this activity was logged.
+    * contactlabel (string) - "Messaged <date>" or "Not contacted".
+    * buttonlabel (string) - "Message all 7" or "Follow up with 7".
+    * donepct, excusedpct, missingpct (float) - Bar segment widths.
+    * donelabel, excusedlabel, missinglegend (string) - Bar legend.
+    * excusedcount (int) - Students excused by an override or extension.
+    * students (array) - Missing students: userid, fullname, viewurl.
+    * studentsjson (string) - Recipients for the composer.
+    * hasexcused (bool), notcounted (string) - Who was left out and why.
+
+    Example context (json):
+    {
+        "cmid": 42,
+        "icon": "check-square-o",
+        "name": "Quiz 3: Pauline Epistles",
+        "url": "https://example.org/mod/quiz/view.php?id=42",
+        "closedstr": "Closed 22/11/26, 23:59",
+        "agostr": "2 days ago",
+        "missingcount": 2,
+        "missinglabel": "2 did not attempt",
+        "contacted": false,
+        "contactlabel": "Not contacted",
+        "buttonlabel": "Message all 2",
+        "donepct": 80, "excusedpct": 5, "missingpct": 15,
+        "donelabel": "17 done", "excusedlabel": "1 excused", "missinglegend": "2 missing",
+        "excusedcount": 1,
+        "students": [
+            {"userid": 5, "fullname": "Benjamin Okafor", "viewurl": "https://example.org/grade/report/coifish/index.php?id=2&userid=5"},
+            {"userid": 6, "fullname": "Kofi Mensah", "viewurl": "https://example.org/grade/report/coifish/index.php?id=2&userid=6"}
+        ],
+        "studentsjson": "[{\"id\":5,\"name\":\"Benjamin Okafor\"},{\"id\":6,\"name\":\"Kofi Mensah\"}]",
+        "hasexcused": true,
+        "notcounted": "Not counted: Ruth Abara (user override)"
+    }
+}}
+<div class="gradetracker-missed-card{{#contacted}} is-contacted{{/contacted}}" data-region="missed-activity" data-cmid="{{cmid}}"
+     data-messaged-now="{{#str}}missed_activity_messaged_now, gradereport_coifish{{/str}}"
+     data-follow-label="{{#str}}missed_activity_follow_up, gradereport_coifish, {{missingcount}}{{/str}}">
+    <div class="gradetracker-missed-row">
+        <span class="gradetracker-missed-icon" aria-hidden="true"><i class="fa fa-{{icon}}"></i></span>
+        <div class="gradetracker-missed-main">
+            <a class="gradetracker-missed-name" href="{{url}}">{{name}}</a>
+            <div class="gradetracker-missed-meta">
+                <span><i class="fa fa-clock-o me-1" aria-hidden="true"></i>{{closedstr}} &middot; <strong>{{agostr}}</strong></span>
+                <span class="gradetracker-missed-count">{{missinglabel}}</span>
+                <span class="gradetracker-missed-status {{#contacted}}gradetracker-missed-status-done{{/contacted}}{{^contacted}}gradetracker-missed-status-pending{{/contacted}}"
+                      data-region="contact-status">{{contactlabel}}</span>
+            </div>
+        </div>
+        <div class="gradetracker-missed-progress" aria-hidden="true">
+            <div class="gradetracker-missed-bar">
+                <i class="gradetracker-missed-bar-done" style="width: {{donepct}}%"></i>
+                <i class="gradetracker-missed-bar-excused" style="width: {{excusedpct}}%"></i>
+                <i class="gradetracker-missed-bar-missing" style="width: {{missingpct}}%"></i>
+            </div>
+            <div class="gradetracker-missed-legend">
+                <span>{{donelabel}}</span>
+                {{#excusedcount}}<span>{{excusedlabel}}</span>{{/excusedcount}}
+                <span>{{missinglegend}}</span>
+            </div>
+        </div>
+        <div class="gradetracker-missed-cta">
+            <button type="button"
+                    class="btn btn-sm {{#contacted}}btn-outline-primary{{/contacted}}{{^contacted}}btn-primary{{/contacted}} gradetracker-log-intervention-btn"
+                    data-action="message-activity"
+                    data-scope="cohort"
+                    data-diagnostictype="missed_activity"
+                    data-tpl-family="deadline"
+                    data-default-action="message_group"
+                    data-cmid="{{cmid}}"
+                    data-cardtitle="{{name}}"
+                    data-students="{{studentsjson}}">
+                <i class="fa fa-envelope me-1" aria-hidden="true"></i><span data-region="label">{{buttonlabel}}</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-link gradetracker-missed-toggle" data-bs-toggle="collapse"
+                    data-bs-target="#gradetracker-missed-students-{{cmid}}" aria-expanded="false"
+                    aria-controls="gradetracker-missed-students-{{cmid}}">
+                {{#str}}missed_activity_students, gradereport_coifish{{/str}} <i class="fa fa-chevron-down" aria-hidden="true"></i>
+            </button>
+        </div>
+    </div>
+    <div class="collapse" id="gradetracker-missed-students-{{cmid}}">
+        <div class="gradetracker-missed-students">
+            <ul class="list-unstyled mb-0">
+                {{#students}}
+                    <li><a href="{{viewurl}}">{{fullname}}</a></li>
+                {{/students}}
+            </ul>
+            {{#hasexcused}}<div class="gradetracker-missed-notcounted">{{notcounted}}</div>{{/hasexcused}}
+        </div>
+    </div>
+</div>

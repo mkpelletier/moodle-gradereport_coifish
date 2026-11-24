@@ -54,6 +54,7 @@ class dispatch_intervention extends external_api {
             'subject' => new external_value(PARAM_TEXT, 'Subject / discussion name'),
             'body' => new external_value(PARAM_RAW, 'Message or announcement body'),
             'notes' => new external_value(PARAM_TEXT, 'Optional teacher notes', VALUE_DEFAULT, ''),
+            'cmid' => new external_value(PARAM_INT, 'Course module the message is about, 0 if none', VALUE_DEFAULT, 0),
         ]);
     }
 
@@ -68,6 +69,7 @@ class dispatch_intervention extends external_api {
      * @param string $subject
      * @param string $body
      * @param string $notes
+     * @param int $cmid
      * @return array
      */
     public static function execute(
@@ -78,7 +80,8 @@ class dispatch_intervention extends external_api {
         string $actionkind,
         string $subject,
         string $body,
-        string $notes = ''
+        string $notes = '',
+        int $cmid = 0
     ): array {
         global $DB, $USER;
 
@@ -91,6 +94,7 @@ class dispatch_intervention extends external_api {
             'subject' => $subject,
             'body' => $body,
             'notes' => $notes,
+            'cmid' => $cmid,
         ]);
 
         $context = \context_course::instance($params['courseid']);
@@ -102,6 +106,15 @@ class dispatch_intervention extends external_api {
         }
         if (!in_array($params['actionkind'], ['message', 'announcement'], true)) {
             throw new \invalid_parameter_exception('actionkind must be message or announcement');
+        }
+        \gradereport_coifish\external\log_intervention::validate_cmid($params['courseid'], $params['cmid']);
+
+        // Activity placeholders ({activityname}, {duedate}, {activitylink}) are the
+        // same for every recipient, so substitute them once in subject and body.
+        if ($params['cmid'] > 0) {
+            $activity = self::activity_placeholders($params['courseid'], $params['cmid']);
+            $params['subject'] = strtr($params['subject'], $activity);
+            $params['body'] = strtr($params['body'], $activity);
         }
 
         // Resolve recipients. An explicit student list always wins. When a
@@ -178,6 +191,7 @@ class dispatch_intervention extends external_api {
             'courseid' => $params['courseid'],
             'teacherid' => $USER->id,
             'diagnostictype' => $params['diagnostictype'],
+            'cmid' => $params['cmid'],
             'scope' => $params['scope'],
             'actiontype' => $actiontype,
             'customaction' => null,
@@ -211,6 +225,30 @@ class dispatch_intervention extends external_api {
             'delivered' => $delivered,
             'announcementdiscussionid' => $announcementdiscussionid,
             'students' => $studentrecords,
+        ];
+    }
+
+    /**
+     * Values for the activity placeholders of a message about one activity.
+     *
+     * The due date is the activity's own (course-level) deadline: the students a
+     * missed-deadline message goes to are, by definition, not on an override.
+     *
+     * @param int $courseid
+     * @param int $cmid
+     * @return array Map of placeholder ('{activityname}', ...) => value.
+     */
+    protected static function activity_placeholders(int $courseid, int $cmid): array {
+        global $DB;
+        $cm = get_fast_modinfo($courseid)->get_cm($cmid);
+        $duefields = ['assign' => 'duedate', 'quiz' => 'timeclose', 'forum' => 'duedate'];
+        $due = isset($duefields[$cm->modname])
+            ? (int)$DB->get_field($cm->modname, $duefields[$cm->modname], ['id' => $cm->instance])
+            : 0;
+        return [
+            '{activityname}' => $cm->name,
+            '{duedate}' => $due > 0 ? userdate($due, get_string('strftimedatetime', 'langconfig')) : '',
+            '{activitylink}' => $cm->url ? $cm->url->out(false) : '',
         ];
     }
 

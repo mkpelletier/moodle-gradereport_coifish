@@ -2300,6 +2300,178 @@
     color: var(--bs-primary);
 }
 
+/* Missed due date cards in the Act now band: one per activity. */
+.gradetracker-missed-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.gradetracker-missed-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-inline-start: 4px solid var(--bs-danger);
+    border-radius: 0.5rem;
+}
+
+.gradetracker-missed-card.is-contacted {
+    border-inline-start-color: var(--bs-success);
+}
+
+.gradetracker-missed-row {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr) 12rem auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.85rem 1rem;
+}
+
+.gradetracker-missed-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.375rem;
+    display: grid;
+    place-items: center;
+    background: var(--bs-primary-bg-subtle);
+    color: var(--bs-primary);
+    font-size: 1.05rem;
+}
+
+.gradetracker-missed-name {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.gradetracker-missed-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.15rem;
+    font-size: 0.8125rem;
+    color: var(--bs-secondary-color);
+}
+
+.gradetracker-missed-count {
+    color: var(--bs-danger-text-emphasis);
+    font-weight: 600;
+}
+
+.gradetracker-missed-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+}
+
+.gradetracker-missed-status-pending {
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger-text-emphasis);
+}
+
+.gradetracker-missed-status-done {
+    background: var(--bs-success-bg-subtle);
+    color: var(--bs-success-text-emphasis);
+}
+
+.gradetracker-missed-bar {
+    display: flex;
+    height: 0.5rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bs-secondary-bg);
+}
+
+.gradetracker-missed-bar i {
+    display: block;
+    height: 100%;
+}
+
+.gradetracker-missed-bar-done {
+    background: var(--bs-success);
+}
+
+.gradetracker-missed-bar-excused {
+    background: var(--bs-secondary-color);
+}
+
+.gradetracker-missed-bar-missing {
+    background: var(--bs-danger);
+}
+
+.gradetracker-missed-legend {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--bs-secondary-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.gradetracker-missed-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+}
+
+.gradetracker-missed-toggle .fa {
+    transition: transform 0.15s;
+}
+
+.gradetracker-missed-toggle[aria-expanded="true"] .fa {
+    transform: rotate(180deg);
+}
+
+.gradetracker-missed-students {
+    border-top: 1px solid var(--bs-border-color);
+    padding: 0.6rem 1rem 0.8rem 4.25rem;
+}
+
+.gradetracker-missed-students ul {
+    columns: 3 12rem;
+    column-gap: 1.5rem;
+}
+
+.gradetracker-missed-notcounted {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--bs-secondary-color);
+}
+
+.gradetracker-missed-older summary {
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--bs-primary);
+}
+
+@media (max-width: 991.98px) {
+    .gradetracker-missed-row {
+        grid-template-columns: 2.25rem minmax(0, 1fr);
+    }
+
+    .gradetracker-missed-progress,
+    .gradetracker-missed-cta {
+        grid-column: 1 / -1;
+    }
+
+    .gradetracker-missed-cta {
+        justify-content: flex-start;
+    }
+
+    .gradetracker-missed-students {
+        padding-inline-start: 1rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gradetracker-missed-toggle .fa {
+        transition: none;
+    }
+}
+
 @media (max-width: 575.98px) {
     .gradetracker-band {
         padding: 1rem 0.75rem 1.1rem;

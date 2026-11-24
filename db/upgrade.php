@@ -158,5 +158,20 @@ function xmldb_gradereport_coifish_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026062901, 'gradereport', 'coifish');
     }
 
+    if ($oldversion < 2026112401) {
+        // Record which activity an intervention was about (missed due date cards).
+        $table = new xmldb_table('gradereport_coifish_intv');
+        $field = new xmldb_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'diagnostictype');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $index = new xmldb_index('courseid_cmid', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'cmid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_plugin_savepoint(true, 2026112401, 'gradereport', 'coifish');
+    }
+
     return true;
 }
