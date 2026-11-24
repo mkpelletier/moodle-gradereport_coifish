@@ -2024,7 +2024,8 @@ class report extends \grade_report {
             case GRADE_AGGREGATE_WEIGHTED_MEAN2: // Simple weighted mean of grades.
                 $totalmax = 0;
                 foreach ($siblings as $sibling) {
-                    if ((float)$sibling->aggregationcoef == 0) { // Exclude extra credit.
+                    // Exclude extra credit.
+                    if ((float)$sibling->aggregationcoef == 0) {
                         $totalmax += (float)$sibling->grademax;
                     }
                 }
@@ -8478,7 +8479,8 @@ class report extends \grade_report {
                     : ($posts > 0 ? 50 : 0);
                 $rate = round($breadth * 0.6 + $volume * 0.4);
                 $level = $this->get_coi_level($rate, $spthresholds);
-                if ($level['level'] >= 2) { // Developing or above.
+                // Developing or above.
+                if ($level['level'] >= 2) {
                     $sphealthy++;
                 }
             }
